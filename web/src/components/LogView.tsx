@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { FileSignature, Gavel, ShieldCheck, ShieldX, Timer, Wallet, X } from 'lucide-react'
-import { api, money, type Config, type Decision, type EvidencePack } from '@/api'
+import { api, assistantLabel, money, type Config, type Decision, type EvidencePack } from '@/api'
 import { Button, ErrorNote, Panel, Pill, SectionTitle, field } from '@/components/kit'
 import { NumberTicker } from '@/components/ui/number-ticker'
 import { cn } from '@/lib/utils'
@@ -161,7 +161,7 @@ export function LogView({ config, decisions, reload }: { config: Config; decisio
                       <td className="whitespace-nowrap px-5 py-3 text-muted-foreground">{new Date(d.at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
                       <td className="px-5 py-3">
                         <div className="max-w-[280px] truncate">{d.request}</div>
-                        <div className="mt-0.5 flex flex-wrap gap-1.5 text-xs text-muted-foreground">for {d.profileName ?? 'Me'}{mcp && <Pill tone="info">via MCP: {d.agent.slice(9)}</Pill>}{d.agent === 'gemini' && <Pill tone="muted">Gemini agent</Pill>}</div>
+                        <div className="mt-0.5 flex flex-wrap gap-1.5 text-xs text-muted-foreground">{assistantLabel(d.profileName)}{mcp && <Pill tone="info">via MCP: {d.agent.slice(9)}</Pill>}{d.agent === 'gemini' && <Pill tone="muted">Gemini agent</Pill>}</div>
                       </td>
                       <td className="px-5 py-3">{d.order.shop}</td>
                       <td className="whitespace-nowrap px-5 py-3 tabular-nums">{money(d.order.total, d.order.currency)}</td>

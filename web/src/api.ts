@@ -119,3 +119,15 @@ export const api = {
 
 export const money = (n: number, cur = 'USD') =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: cur || 'USD' }).format(Number(n) || 0)
+
+/** "Mom (Kamala, 74)" -> "Kamala". Profile names keep the family relation; the UI shows the person's name. */
+export const personName = (profileName?: string | null) => {
+  if (!profileName || profileName === 'Me') return null
+  return profileName.match(/\(([^,)]+)/)?.[1]?.trim() ?? profileName
+}
+
+/** How a payment's owner is shown: "My assistant" or "Kamala's assistant (Guardian mode)". */
+export const assistantLabel = (profileName?: string | null) => {
+  const who = personName(profileName)
+  return who ? `${who}'s assistant (Guardian mode)` : 'My assistant'
+}

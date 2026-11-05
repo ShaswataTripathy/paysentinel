@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { HeartHandshake, ShieldAlert } from 'lucide-react'
-import { api, money, type Decision, type GuardianRules, type Profile } from '@/api'
+import { api, money, personName, type Decision, type GuardianRules, type Profile } from '@/api'
 import { Button, ErrorNote, Panel, Pill, SectionTitle, StatusDot, field } from '@/components/kit'
 import { BlurFade } from '@/components/ui/blur-fade'
 import { cn } from '@/lib/utils'
@@ -44,8 +44,8 @@ function Rules({ profile, categories, onSaved }: { profile: Profile; categories:
   )
   return (
     <Panel>
-      <SectionTitle eyebrow={`Set by ${profile.guardian!.name}`} title={`Rules for ${profile.name}`}>
-        Enforced on every payment, even if {profile.name.split(' ')[0]} asks the assistant for something else.
+      <SectionTitle eyebrow={`Set by ${profile.guardian!.name}`} title={`Rules for ${personName(profile.name)}'s assistant`}>
+        Enforced on every payment, even if {personName(profile.name)} asks the assistant for something else.
       </SectionTitle>
       <div className="grid gap-5 lg:grid-cols-3">
         <div>
@@ -111,7 +111,7 @@ export function GuardianView({ profiles, categories, decisions, reload, onProfil
                 <BlurFade key={d.id} delay={i * 0.05}>
                   <div className="rounded-xl border border-amber-400/25 bg-amber-400/[.04] p-4">
                     <div className="text-sm">
-                      <strong>{d.profileName}</strong>'s assistant wants to pay <strong>{money(d.order.total, d.order.currency)}</strong> at {d.order.shop}
+                      <strong>{personName(d.profileName) ?? d.profileName}</strong>'s assistant wants to pay <strong>{money(d.order.total, d.order.currency)}</strong> at {d.order.shop}
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">"{d.request}" · {itemsText(d)}</div>
                     <ul className="mt-3 grid gap-1.5">
@@ -139,7 +139,7 @@ export function GuardianView({ profiles, categories, decisions, reload, onProfil
               {blocked.slice(0, 6).map((d) => (
                 <div key={d.id} className="rounded-xl border border-rose-400/25 bg-rose-500/[.04] p-4">
                   <div className="flex items-center justify-between gap-2 text-sm">
-                    <span><strong>Blocked:</strong> {money(d.order.total, d.order.currency)} for {itemsText(d)}</span>
+                    <span><strong>Blocked:</strong> {personName(d.profileName) ? `${personName(d.profileName)}'s assistant` : 'An assistant'} tried to pay {money(d.order.total, d.order.currency)} for {itemsText(d)}</span>
                     <Pill tone="voided">voided</Pill>
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">"{d.request}" · {new Date(d.at).toLocaleString()}</div>
