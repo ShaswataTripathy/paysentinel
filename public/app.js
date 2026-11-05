@@ -376,7 +376,7 @@ async function loadLog() {
         .map((d) => {
           const outcome = d.payment.action ?? 'held';
           const reason = d.checks.filter((c) => c.status !== 'pass').map((c) => c.label).join(', ') || 'all checks passed';
-          return `<tr><td>${new Date(d.at).toLocaleString()}</td><td>${esc(d.request)}<div class="muted">for ${esc(d.profileName ?? 'Me')}</div></td><td>${esc(d.order.shop)}</td><td>${money(d.order.total, d.order.currency)}</td>
+          return `<tr><td>${new Date(d.at).toLocaleString()}</td><td>${esc(d.request)}<div class="muted">for ${esc(d.profileName ?? 'Me')}${String(d.agent ?? '').startsWith('external:') ? ` · <span class="pill review">via MCP: ${esc(d.agent.slice(9))}</span>` : ''}</div></td><td>${esc(d.order.shop)}</td><td>${money(d.order.total, d.order.currency)}</td>
             <td><span class="pill ${esc(outcome)}">${esc(outcome)}</span>${d.resolvedBy === 'shopper' ? ' <span class="muted">by you</span>' : d.resolvedBy === 'guardian' ? ` <span class="muted">by ${esc(d.approver)}</span>` : ''}${d.dispute ? ' <span class="pill review">disputed</span>' : ''}</td><td>${esc(reason)}</td>
             <td><button class="link" data-evidence="${d.id}" aria-label="Evidence for ${esc(d.request)}">Evidence</button></td></tr>`;
         })

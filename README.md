@@ -78,6 +78,40 @@ Before approval, the payment is summarised in plain words ("You are about to app
 
 Sellers paste a product list in any format; AI turns it into a clean, agent-readable catalog, and every listing is scanned for hidden instructions aimed at AI agents.
 
+## Any AI agent can pay through PaySentinel (MCP server)
+
+PaySentinel ships an [MCP](https://modelcontextprotocol.io) server, so any MCP-capable agent (Claude Desktop, Claude Code, Cursor, an agent built with PayPal's Agent Toolkit…) can shop and pay with the same protection: PayPal holds the money, PaySentinel checks it against the user's mandate, then captures, holds for approval, or voids. The agent never decides about money.
+
+| Tool | What it does |
+|---|---|
+| `create_mandate` | The user's own words → strict mandate (call first) |
+| `search_products`, `get_product` | Browse shops; listings come back as written, hidden text included, and are marked untrusted |
+| `checkout` | Cart → PayPal hold → PaySentinel decision. `test_card` finishes at once (sandbox); `paypal` returns an approval link |
+| `complete_payment` | After the user approves on PayPal: place the hold and decide |
+| `get_decision` | Check a payment that is waiting for approval |
+
+Add it to Claude Code (PaySentinel must be running, locally or hosted):
+
+```bash
+claude mcp add paysentinel --env PAYSENTINEL_URL=http://localhost:3000 -- node /path/to/paysentinel/src/mcp.js
+```
+
+Or to Claude Desktop's `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "paysentinel": {
+      "command": "node",
+      "args": ["/path/to/paysentinel/src/mcp.js"],
+      "env": { "PAYSENTINEL_URL": "http://localhost:3000", "PAYSENTINEL_AGENT_NAME": "claude-desktop" }
+    }
+  }
+}
+```
+
+Then ask the agent: *"Use PaySentinel to buy one pack of AA batteries under $15."* Payments made over MCP appear in the Decision log tagged **via MCP**. `npm run mcp:smoke` runs an honest purchase (captured) and a hijacked one (voided) through the MCP server.
+
 ## PayPal integration
 
 | Step | API |
@@ -151,6 +185,7 @@ src/ai.js         Gemini calls (with model failover): mandate, explanations, dis
 src/catalog.js    shop catalogs, search, listing scanner
 src/profiles.js   Guardian mode profiles and rules
 src/evidence.js   signed receipts and dispute evidence packs
+src/mcp.js        MCP server: lets any AI agent pay through PaySentinel
 src/paypal.js     PayPal OAuth, Orders v2, authorize/capture/void
 public/           web UI
 test/             rule engine tests

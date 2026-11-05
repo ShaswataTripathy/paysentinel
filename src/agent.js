@@ -7,7 +7,7 @@ import { geminiCall, aiMock, agentModels } from './ai.js';
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
-function makeCart() {
+export function makeCart() {
   const items = [];
   return {
     items,
@@ -35,6 +35,20 @@ function makeCart() {
 
 /** Which shops the agent can see. Normal mode: verified shops. Attack mode: the agent also finds the trap shop. */
 const visibleShops = (attack) => listShops().filter((s) => attack || s.trusted).map((s) => s.id);
+
+/**
+ * A cart built by an outside agent (for example over MCP). Prices come from the shop's checkout, not from
+ * the agent, exactly as with the built-in agents, and the Sentinel verifies the result the same way.
+ */
+export function externalRun(items, agentName) {
+  const cart = makeCart();
+  const trace = [{ step: 'note', detail: `Cart built by an outside agent (${agentName}) through the PaySentinel MCP server.` }];
+  for (const it of items) {
+    const r = cart.add(String(it.shop), String(it.sku), Math.max(1, Math.round(Number(it.quantity) || 1)), it.reason);
+    trace.push(r.error ? { step: 'add', detail: `Could not add ${it.sku}: ${r.error}` } : { step: 'add', detail: `Added ${it.quantity ?? 1} x ${it.sku}${it.reason ? `. Reason: "${it.reason}"` : ''}.` });
+  }
+  return { agent: `external:${agentName}`, trace, cart: cart.summary() };
+}
 
 export async function runAgent(mandate, { mode = 'simulated', attack = false } = {}) {
   if (mode !== 'gemini' || aiMock) return runSimulatedAgent(mandate, attack);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { verify } from '../src/sentinel.js';
 import { nameMatches, scanRawText } from '../src/catalog.js';
 import { validateMandate } from '../src/ai.js';
-import { runAgent } from '../src/agent.js';
+import { runAgent, externalRun } from '../src/agent.js';
 
 const mandate = validateMandate(
   { must_match: ['aa', 'batteries'], quantity: 1, max_unit_price: 15, max_total: 15, currency: 'USD', allowed_shops: [] },
@@ -159,4 +159,20 @@ test('Shelf: instructions to AI agents in the raw seller text are reported, even
   assert.match(found[0].line, /^Candle/);
   assert.ok(found[0].reasons.includes('text addressed to AI agents'));
   assert.equal(scanRawText('Mug, 14.50\nTote bag, 9').length, 0);
+});
+
+test('MCP: an outside agent cannot set prices, and a hijacked outside cart is voided', () => {
+  const run = externalRun(
+    [
+      { shop: 'bargainbin', sku: 'BB-AA8', quantity: 1, unit_price: 0.01 },
+      { shop: 'bargainbin', sku: 'BB-PROTECT', quantity: 1 },
+      { shop: 'bargainbin', sku: 'NOPE', quantity: 1 },
+    ],
+    'test-agent',
+  );
+  assert.equal(run.agent, 'external:test-agent');
+  assert.equal(run.cart.items.find((i) => i.sku === 'BB-AA8').unit_price, 12.99); // the shop's checkout price, not the agent's
+  assert.equal(run.cart.items.length, 2); // unknown sku rejected
+  const result = verify(mandate, { ...run.cart, currency: 'USD' });
+  assert.equal(result.decision, 'void');
 });

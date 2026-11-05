@@ -5,9 +5,9 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { extractMandate, explainDecision, normalizeProducts, draftDisputeResponse, aiMock, aiModels } from './ai.js';
-import { runAgent } from './agent.js';
+import { runAgent, externalRun } from './agent.js';
 import { verify } from './sentinel.js';
-import { listShops, getShop, scanListing, scanRawText, upsertShop } from './catalog.js';
+import { listShops, getShop, getProduct, search, scanListing, scanRawText, upsertShop } from './catalog.js';
 import { createHeldOrder, authorizeOrder, captureAuthorization, voidAuthorization, paypalMock, clientId, cardDemo } from './paypal.js';
 import { listProfiles, getProfile, updateRules, CATEGORIES } from './profiles.js';
 import { catalogSnapshot, signReceipt, evidencePack } from './evidence.js';
@@ -109,6 +109,37 @@ app.post(
   }),
 );
 
+// ---------------- 2b. outside agents (MCP server) ----------------
+// An outside agent sees every shop, like on the open web. Listings are returned as written, hidden text included:
+// PaySentinel does not try to make the agent safe, it makes the payment safe.
+app.get('/api/search', (req, res) => {
+  const q = String(req.query.q ?? '').trim();
+  if (need(q, res, 'Give a search query.')) return;
+  res.json(search(q).slice(0, 10).map(({ score, ...r }) => r));
+});
+
+app.get('/api/shops/:shop/products/:sku', (req, res) => {
+  const p = getProduct(req.params.shop, req.params.sku);
+  if (need(p, res, 'Product not found', 404)) return;
+  const { checkout_price, ...listing } = p;
+  res.json({ shop: req.params.shop, ...listing });
+});
+
+app.post(
+  '/api/mandates/:id/cart',
+  wrap(async (req, res) => {
+    const mandate = mandates.get(req.params.id);
+    if (need(mandate, res, 'Mandate not found', 404)) return;
+    const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 20) : [];
+    if (need(items.length, res, 'Send at least one item: { shop, sku, quantity }.')) return;
+    const agent = String(req.body?.agent ?? 'mcp-client').replace(/[^\w .:-]/g, '').slice(0, 40) || 'mcp-client';
+    const run = externalRun(items, agent);
+    const runId = randomUUID();
+    runs.set(runId, { ...run, mandateId: mandate.id });
+    res.status(201).json({ runId, ...run });
+  }),
+);
+
 // ---------------- 3. hold the money ----------------
 app.post(
   '/api/checkout',
@@ -121,9 +152,9 @@ app.post(
     const mandate = mandates.get(mandateId);
     const cart = run.cart;
     if (need(cart?.shop && cart.items?.length, res, 'The agent did not put anything in the cart.')) return;
-    const { id } = await createHeldOrder(cart, { currency: mandate.currency, reference: mandate.id.slice(0, 32), testCard: req.body?.method === 'card' });
+    const { id, approveUrl } = await createHeldOrder(cart, { currency: mandate.currency, reference: mandate.id.slice(0, 32), testCard: req.body?.method === 'card' });
     checkouts.set(id, { mandateId, run });
-    res.status(201).json({ orderId: id });
+    res.status(201).json({ orderId: id, approveUrl: approveUrl ?? null });
   }),
 );
 
@@ -194,6 +225,12 @@ app.post(
 );
 
 app.get('/api/decisions', (req, res) => res.json([...decisions].reverse()));
+
+app.get('/api/decisions/:id', (req, res) => {
+  const d = decisions.find((x) => x.id === req.params.id);
+  if (need(d, res, 'Decision not found', 404)) return;
+  res.json(d);
+});
 
 // ---------------- 6. disputes: answer with the signed evidence pack ----------------
 const findDecision = (id) => decisions.find((x) => x.id === id);

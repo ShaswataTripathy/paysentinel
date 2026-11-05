@@ -117,7 +117,9 @@ export async function createHeldOrder(cart, { currency = 'USD', reference, testC
     if (!view.authorizationId) throw new Error(`PayPal did not authorize the test card (order status ${order.status}).`);
     preAuthorized.set(order.id, view);
   }
-  return { id: order.id };
+  // Where the buyer approves this order on PayPal (used by outside agents that have no browser button).
+  const approveUrl = order.links?.find((l) => l.rel === 'payer-action' || l.rel === 'approve')?.href ?? null;
+  return { id: order.id, approveUrl };
 }
 
 /** After buyer approval: place the hold. Returns PayPal's view of the order, including the authorization id. */
