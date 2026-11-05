@@ -212,7 +212,7 @@ export async function explainDecision(mandate, order, result) {
     const r = await geminiJSON(
       `Explain this payment decision to the shopper in at most 2 short, plain sentences. No jargon, no markdown.
 Request: "${mandate.request}"
-Decision: ${result.decision} (capture = charged, review = waiting for the shopper, void = blocked and money released)
+Decision: ${result.decision} (capture = the payment has ALREADY been charged; review = the money is on hold until the shopper or guardian decides; void = blocked and the hold released, nothing charged). Describe what already happened; never say a charge is coming later.
 Findings: ${JSON.stringify(failed.length ? failed : result.checks.slice(0, 3))}`,
       { type: 'OBJECT', properties: { text: { type: 'STRING' } }, required: ['text'] },
     );
