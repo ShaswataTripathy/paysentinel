@@ -44,6 +44,10 @@ test('mandate: model output is validated, never trusted', () => {
   const eur = validateMandate({ must_match: ['aa'], quantity: 1, max_total: 10, currency: 'EUR' }, 'x');
   assert.ok(eur.missing.some((s) => s.includes('US dollars')));
 
+  for (const c of ['$', 'US$', 'usd', 'dollars', ''])
+    assert.deepEqual(validateMandate({ must_match: ['aa'], max_total: 10, currency: c }, 'aa under 10').missing, [], c);
+  assert.deepEqual(validateMandate({ must_match: ['aa'], max_total: 10, currency: 'EUR' }, 'aa under $10').missing, []);
+
   const junk = validateMandate(null, 'x');
   assert.ok(junk.missing.length === 2);
   assert.deepEqual(validateMandate({ must_match: ['<script>', 'AA'] , max_total: 5 }, 'x').must_match, ['aa']);
