@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Bot, CreditCard, Lock, Sparkles, Volume2, WandSparkles, Zap } from 'lucide-react'
+import { Bot, CreditCard, HeartHandshake, Lock, Sparkles, UserRound, Volume2, WandSparkles, Zap } from 'lucide-react'
 import { api, money, type Config, type Decision, type Mandate, type Profile, type Run } from '@/api'
 import { Button, ErrorNote, Panel, Pill, field } from '@/components/kit'
 import { ShimmerButton } from '@/components/ui/shimmer-button'
@@ -14,6 +14,21 @@ const EXAMPLES: Record<string, string[]> = {
 }
 
 type Step = 1 | 2 | 3 | 4
+
+/** Plain-language description of a profile, built from its real rules so it stays accurate when they change. */
+function describeProfile(p: Profile): { title: string; text: string } {
+  if (!p.guardian) return { title: 'My own assistant', text: 'You set the limits in your request. Anything unusual comes back to you for approval.' }
+  const who = p.name.match(/\(([^,)]+),\s*(\d+)\)/) // "Mom (Kamala, 74)" -> Kamala, 74
+  const person = who ? `${who[1]}, ${who[2]}` : p.name
+  const guardian = p.guardian.name.replace(/\s*\(.*\)$/, '')
+  const r = p.guardian.rules
+  const cats = r.allowed_categories.map((c) => c.replace('_', ' ')).join(', ')
+  const blocked = r.blocked_categories.map((c) => c.replace('_', ' ')).join(', ')
+  return {
+    title: `A family member's assistant`,
+    text: `${person} uses an AI assistant. ${guardian} (family) set its rules: ${cats} only, up to $${r.per_order_limit} per order${blocked ? `, ${blocked} always blocked` : ''}.`,
+  }
+}
 
 function StepCard({ n, title, active, done, locked, children, aside }: { n: number; title: string; active: boolean; done: boolean; locked: boolean; children: ReactNode; aside?: ReactNode }) {
   return (
@@ -164,22 +179,39 @@ export function ShopperFlow({ config, profiles, shopNames, onDecision }: { confi
     <ol className="grid gap-5">
       {/* 1. Intent */}
       <StepCard n={1} title="Tell your agent what to buy" active={step === 1} done={step > 1} locked={false}>
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <span className="text-sm text-muted-foreground">Shopping for</span>
-          <div className="inline-flex rounded-xl border border-border bg-background/60 p-1">
-            {profiles.map((p) => (
+        <div className="mb-1 text-sm font-medium">Whose AI assistant is shopping?</div>
+        <div className="mb-4 grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Whose AI assistant is shopping">
+          {profiles.map((p) => {
+            const card = describeProfile(p)
+            const on = profileId === p.id
+            const Icon = p.guardian ? HeartHandshake : UserRound
+            return (
               <button
                 key={p.id}
+                role="radio"
+                aria-checked={on}
                 onClick={() => pickProfile(p.id)}
-                className={cn('relative rounded-lg px-3 py-1.5 text-sm font-medium transition-colors', profileId === p.id ? 'text-white' : 'text-muted-foreground hover:text-foreground')}
+                className={cn(
+                  'relative flex items-start gap-3 rounded-xl border p-3.5 text-left transition',
+                  on ? 'border-blue-400/50 bg-blue-500/[.08]' : 'border-border bg-background/40 hover:border-blue-400/30',
+                )}
               >
-                {profileId === p.id && <motion.span layoutId="profile-pill" className="absolute inset-0 rounded-lg bg-blue-500/25 ring-1 ring-blue-400/40" />}
-                <span className="relative">{p.name}</span>
+                <span className={cn('grid size-9 shrink-0 place-items-center rounded-lg ring-1', on ? 'bg-blue-500/20 text-blue-200 ring-blue-400/40' : 'bg-muted text-muted-foreground ring-border')}>
+                  <Icon className="size-4.5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                    {card.title}
+                    {p.guardian && <Pill tone="info">Guardian mode</Pill>}
+                  </span>
+                  <span className="mt-0.5 block text-[13px] leading-snug text-muted-foreground">{card.text}</span>
+                </span>
+                <span className={cn('absolute right-3 top-3 size-4 rounded-full ring-1', on ? 'bg-blue-400 ring-4 ring-blue-400/25' : 'ring-border')} aria-hidden />
               </button>
-            ))}
-          </div>
-          {profile?.guardian && <Pill tone="info">{profile.guardian.name} sets the rules</Pill>}
+            )
+          })}
         </div>
+        <div className="mb-1 text-sm font-medium">What should it buy?</div>
         <textarea className={cn(field, 'min-h-[76px] resize-y text-base')} value={task} onChange={(e) => setTask(e.target.value)} aria-label="Shopping request" />
         <div className="mt-2 flex flex-wrap gap-2">
           {examples.map((t) => (
