@@ -1,6 +1,9 @@
 // PayPal Orders v2 + Payments v2 (sandbox): hold money with intent AUTHORIZE, then capture or void.
 // Falls back to an in-memory mock when no credentials are set.
 import { randomUUID } from 'node:crypto';
+import { log, timed } from './obs.js';
+
+const TIMEOUT_MS = Number(process.env.PAYPAL_TIMEOUT_MS) || 30_000;
 
 const BASE = process.env.PAYPAL_API_BASE || 'https://api-m.sandbox.paypal.com';
 const CLIENT_ID = process.env.PAYPAL_CLIENT_ID;
@@ -14,36 +17,53 @@ async function getToken() {
   if (token && token.expiresAt > Date.now() + 60_000) return token.value;
   const res = await fetch(`${BASE}/v1/oauth2/token`, {
     method: 'POST',
+    signal: AbortSignal.timeout(TIMEOUT_MS),
     headers: {
       Authorization: 'Basic ' + Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64'),
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: 'grant_type=client_credentials',
   });
-  if (!res.ok) throw new Error(`PayPal auth failed (${res.status}): ${await res.text()}`);
+  // Never echo the response body: it can contain request details. The status is enough to diagnose.
+  if (!res.ok) throw new Error(`PayPal auth failed (${res.status}). Check PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET.`);
   const d = await res.json();
   token = { value: d.access_token, expiresAt: Date.now() + d.expires_in * 1000 };
   return token.value;
 }
 
-async function pp(method, path, body) {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${await getToken()}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=representation',
-      'PayPal-Request-Id': randomUUID(),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
+/**
+ * One PayPal REST call. `requestId` makes the call idempotent: PayPal returns the first result for a repeated id,
+ * so a retried capture can never charge twice.
+ */
+async function pp(method, path, body, { requestId = randomUUID() } = {}) {
+  const op = path.replace(/\/[A-Z0-9-]{10,}(?=\/|$|\?)/g, '/:id').replace(/\?.*$/, ''); // metric label without ids
+  return timed('paypal_call', { op: `${method} ${op}` }, async () => {
+    const res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${await getToken()}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+        'PayPal-Request-Id': requestId,
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    const text = await res.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null; // e.g. an HTML error page from a proxy
+    }
+    if (!res.ok) {
+      const debugId = res.headers.get('paypal-debug-id') ?? data?.debug_id;
+      const detail = data?.details?.map((d) => [d.issue, d.description].filter(Boolean).join(' ')).join('; ');
+      log('warn', 'paypal.error', { method, op, status: res.status, name: data?.name, debugId, detail });
+      throw new Error(`PayPal ${method} ${op} failed (${res.status}): ${data?.message ?? data?.name ?? 'unexpected response'}${detail ? ` - ${detail}` : ''}${debugId ? ` (debug id ${debugId})` : ''}`);
+    }
+    return data;
   });
-  const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
-  if (!res.ok) {
-    const detail = data?.details?.map((d) => [d.field, d.issue, d.description].filter(Boolean).join(' ')).join('; ');
-    throw new Error(`PayPal ${method} ${path} failed (${res.status}): ${data?.message ?? text}${detail ? ` - ${detail}` : ''}`);
-  }
-  return data;
 }
 
 const money = (n) => Number(n).toFixed(2);
@@ -144,13 +164,14 @@ export async function authorizeOrder(orderId) {
 
 export async function captureAuthorization(authId) {
   if (paypalMock) return { id: `MOCK-CAPTURE-${authId.slice(-8)}`, status: 'COMPLETED' };
-  const c = await pp('POST', `/v2/payments/authorizations/${encodeURIComponent(authId)}/capture`, { final_capture: true });
+  if (!authId) throw new Error('PayPal capture failed: no authorization id.');
+  const c = await pp('POST', `/v2/payments/authorizations/${encodeURIComponent(authId)}/capture`, { final_capture: true }, { requestId: `capture-${authId}` });
   return { id: c.id, status: c.status };
 }
 
 // ---------------- Disputes ----------------
 // Sandbox: a sandbox buyer opens the case in the sandbox Resolution Center; we find it by capture id.
-// NOTE: provide-evidence's exact multipart shape is from the docs and still needs a real sandbox test.
+// provide-evidence (multipart: `input` JSON + `evidence-file`) was verified on a real sandbox case.
 const mockDisputes = new Map();
 
 /** Mock only: a buyer claims their AI assistant bought this without permission. */
@@ -200,6 +221,7 @@ export async function provideEvidence(disputeId, notes, pack) {
       method: 'POST',
       headers: { Authorization: `Bearer ${await getToken()}` }, // fetch sets the multipart boundary itself
       body: form,
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     return { ok: res.ok, status: res.status, text: await res.text() };
   };
@@ -230,6 +252,7 @@ export async function provideEvidence(disputeId, notes, pack) {
 
 export async function voidAuthorization(authId) {
   if (paypalMock) return { status: 'VOIDED' };
-  const v = await pp('POST', `/v2/payments/authorizations/${encodeURIComponent(authId)}/void`);
+  if (!authId) throw new Error('PayPal void failed: no authorization id.');
+  const v = await pp('POST', `/v2/payments/authorizations/${encodeURIComponent(authId)}/void`, undefined, { requestId: `void-${authId}` });
   return { status: v?.status ?? 'VOIDED' };
 }

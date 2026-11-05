@@ -86,15 +86,27 @@ export interface EvidencePack {
   [key: string]: unknown
 }
 
+/** Limits shared with the server (src/server.js), so the UI can explain them before a request fails. */
+export const LIMITS = { request: 500, shopName: 60, products: 20_000, disputeNotes: 2000, disputeMin: 20, money: 10_000 }
+
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as { error?: string }).error || `Request failed (${res.status})`)
-  return data as T
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+  } catch {
+    throw new Error('Cannot reach PaySentinel. Check your connection and try again.')
+  }
+  const data = (await res.json().catch(() => null)) as ({ error?: string; requestId?: string } & T) | null
+  if (!res.ok) {
+    const msg = data?.error || (res.status === 429 ? 'Too many requests. Please wait a minute.' : `Request failed (${res.status}).`)
+    throw new Error(data?.requestId ? `${msg} (ref ${data.requestId.slice(0, 8)})` : msg)
+  }
+  if (data === null) throw new Error('PaySentinel sent an unexpected response.')
+  return data
 }
 
 export const api = {

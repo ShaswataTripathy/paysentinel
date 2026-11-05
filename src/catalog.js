@@ -1,12 +1,23 @@
 // Shop catalogs ("Shelf"): load, search, quote, import, and scan listings for hidden instructions.
 import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dataFile } from './paths.js';
 
-const FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'shops.json');
+const FILE = dataFile('shops.json');
 let shops = JSON.parse(fs.readFileSync(FILE, 'utf8'));
 
-const save = () => fs.writeFileSync(FILE, JSON.stringify(shops, null, 2));
+/** Atomic write: a crash mid-write must not leave a half-written catalog behind. */
+const save = () => {
+  fs.writeFileSync(`${FILE}.tmp`, JSON.stringify(shops, null, 2));
+  fs.renameSync(`${FILE}.tmp`, FILE);
+};
+
+/** Shops added through the Shelf carry `shelf: true`; every other shop is part of the base catalog. */
+export const MAX_SHELF_SHOPS = 25;
+export const isProtectedShop = (id) => {
+  const s = shops.find((x) => x.id === id);
+  return !!s && !s.shelf;
+};
+export const shelfShopCount = () => shops.filter((s) => s.shelf).length;
 
 /** Crude singular form: "batteries" / "battery" -> "batter", "cables" -> "cabl". */
 export const stem = (w) => String(w).toLowerCase().replace(/(ies|es|s|y)$/, '');
@@ -24,7 +35,7 @@ export function vocabulary() {
   return v;
 }
 
-export const listShops = () =>shops.map(({ id, name, trusted, products }) => ({ id, name, trusted, productCount: products.length }));
+export const listShops = () => shops.map(({ id, name, trusted, products }) => ({ id, name, trusted, productCount: products.length }));
 export const getShop = (id) => shops.find((s) => s.id === id) ?? null;
 
 export function getProduct(shopId, sku) {
@@ -71,6 +82,20 @@ export function scanRawText(raw) {
     .filter((r) => r.reasons.length);
 }
 
+/**
+ * Shelf clean-up: remove hidden HTML comments, invisible characters and every sentence that reads as an
+ * instruction to AI agents. What is removed is reported to the seller (see scanRawText).
+ */
+export function stripInstructions(text) {
+  const visible = String(text).replace(/<!--[\s\S]*?-->/g, ' ').replace(/[\u200B-\u200F\u2060\uFEFF]/g, '');
+  return visible
+    .split(/(?<=[.!?])\s+|\r?\n/)
+    .filter((sentence) => !PATTERNS.some((p) => p.re.test(sentence)))
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** Returns why a listing looks like it contains instructions for AI agents, and which SKUs it pushes. */
 export function scanListing(shopId, product) {
   const text = `${product.name}\n${product.description ?? ''}`;
@@ -94,7 +119,8 @@ export function injectedSkus(shopId) {
 
 /** Shelf import: add or replace a shop from normalized products. */
 export function upsertShop({ id, name, trusted = false, products }) {
-  const shop = { id, name, trusted, products };
+  if (isProtectedShop(id)) throw new Error(`Shop ${id} is part of the base catalog and cannot be replaced.`);
+  const shop = { id, name, trusted, shelf: true, products };
   const i = shops.findIndex((s) => s.id === id);
   if (i >= 0) shops[i] = shop;
   else shops.push(shop);

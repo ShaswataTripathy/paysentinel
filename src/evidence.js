@@ -3,7 +3,10 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { getShop, getProduct } from './catalog.js';
 
-const SECRET = process.env.RECEIPT_SECRET || 'paysentinel-dev-secret-change-me';
+const DEV_SECRET = 'paysentinel-dev-secret-change-me';
+const SECRET = process.env.RECEIPT_SECRET || DEV_SECRET;
+/** True when receipts are signed with the public development key (the server refuses this in production). */
+export const usingDevSecret = SECRET === DEV_SECRET;
 
 /** Stable JSON: keys sorted, so the same content always hashes the same way. */
 function canonical(v) {
@@ -62,7 +65,7 @@ export function signReceipt(d) {
 }
 
 export function verifyReceipt(d) {
-  if (!d.receipt) return false;
+  if (!d.receipt?.hmac || !/^[0-9a-f]{64}$/.test(d.receipt.hmac)) return false;
   const expected = Buffer.from(signReceipt(d).hmac, 'hex');
   const got = Buffer.from(d.receipt.hmac, 'hex');
   return expected.length === got.length && timingSafeEqual(expected, got);

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { FileSignature, Gavel, ShieldCheck, ShieldX, Timer, Wallet, X } from 'lucide-react'
-import { api, assistantLabel, money, type Config, type Decision, type EvidencePack } from '@/api'
+import { api, assistantLabel, LIMITS, money, type Config, type Decision, type EvidencePack } from '@/api'
 import { Button, ErrorNote, Panel, Pill, SectionTitle, field } from '@/components/kit'
 import { NumberTicker } from '@/components/ui/number-ticker'
 import { cn } from '@/lib/utils'
@@ -92,10 +92,11 @@ function Evidence({ id, config, onClose, onChange }: { id: string; config: Confi
                 </div>
               ) : (
                 <>
-                  <textarea className={cn(field, 'mt-3 min-h-[140px]')} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Draft with AI, then edit before sending" />
+                  <textarea className={cn(field, 'mt-3 min-h-[140px]')} value={notes} maxLength={LIMITS.disputeNotes} onChange={(e) => setNotes(e.target.value)} placeholder="Draft with AI, then edit before sending" />
+                  <div className="mt-1 text-right text-xs text-muted-foreground">{notes.length}/{LIMITS.disputeNotes}</div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button variant="ghost" busy={busy === 'draft'} onClick={() => act('draft', async () => setNotes((await api.draftDispute(id)).notes))}>Draft response with AI</Button>
-                    <Button busy={busy === 'send'} disabled={!notes.trim()} onClick={() => act('send', () => api.submitDispute(id, notes))}>Send response + evidence to PayPal</Button>
+                    <Button busy={busy === 'send'} disabled={notes.trim().length < LIMITS.disputeMin || !!busy} onClick={() => act('send', () => api.submitDispute(id, notes))}>Send response + evidence to PayPal</Button>
                   </div>
                 </>
               )}

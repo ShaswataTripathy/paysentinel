@@ -131,10 +131,34 @@ Google Gemini (free tier; agent on `gemini-3.5-flash`, short tasks on `gemini-3.
 - **Shopping agent** with function calling: search, read listing, add to cart, checkout (`src/agent.js`)
 - **Plain-English explanations** of each decision (`src/ai.js`)
 - **Shelf import:** messy product lists into clean catalog entries (`src/ai.js`)
-
 - **Dispute replies** drafted from the signed evidence pack only (`src/ai.js`)
 
 Model output is always validated, and the payment decision itself is deterministic (`src/sentinel.js`). If Gemini is unreachable, the mandate falls back to an offline parser and the agent to the scripted one, so the demo never stalls.
+
+## Security, guardrails and observability
+
+**AI guardrails**
+- *The model never decides about money.* The Sentinel (`src/sentinel.js`) is plain code and fails closed: empty orders, zero or negative quantities and prices, a currency other than the mandate's, or missing limits are all blocked. If the checks themselves throw, the held money is voided.
+- *Untrusted text is fenced.* User requests, seller listings, product names and buyer dispute messages go into prompts between `<<<` and `>>>` markers, with an instruction to treat them as data.
+- *Model output is validated.* Mandates are schema-checked: keywords sanitized, quantity ≤ 100, limits ≤ $10,000, unknown shop ids dropped, USD only. Explanations and dispute drafts are rejected if they contain links, e-mail addresses or markup, or if they contradict the decision (a capture called "blocked", a void called "charged"). A dispute draft must also quote the receipt hash and must not offer a refund. A rejected output falls back to a template built only from verified facts.
+- *Indirect prompt injection.* Listing text aimed at AI agents (hidden HTML comments, invisible characters, "AI assistants must…", "do not tell the user") is detected, used by the Sentinel to block planted items, and stripped from Shelf imports and reported to the seller.
+- *Agent limits.* At most 10 turns and 8 tool calls per turn, 20 cart lines and 100 units per line. Prices always come from the shop's checkout, never from the agent.
+
+**API**
+- Every input is validated and length-capped; ids must match `[A-Za-z0-9-]{1,64}`; errors are JSON, and internal errors return a generic message with a request id.
+- Helmet security headers with a strict Content-Security-Policy (only PayPal and Google Fonts allowed); `frame-ancestors 'none'`.
+- CSRF: state-changing requests must be `application/json`, which a cross-site form cannot send.
+- Rate limits per IP: 240 API calls a minute, 12 for AI-backed calls, 30 for payment calls.
+- Money safety: one PayPal order per agent run, a lock against double authorize/approve/submit, idempotency keys on capture and void (a retry can never charge twice), 30 s timeouts on PayPal calls.
+- The Shelf cannot replace a base-catalog shop (the Sentinel checks prices against it), and imported shops are never verified.
+- Expiring, size-capped in-memory state; atomic file writes; a corrupt decision log is set aside instead of crashing the server; receipts refuse to use the development key in production.
+
+**Observability**
+- One JSON log line per event (`http.request`, `mandate.created`, `agent.run`, `order.created`, `payment.decided`, `payment.resolved`, `dispute.*`, `ai.fallback`, `ai.output_rejected`, `paypal.error` with PayPal's debug id), each with a request id that is also returned in the `X-Request-Id` header. No card data, secrets or tokens are logged.
+- `GET /api/metrics`: request counts and latency per route, Gemini and PayPal call counts and latency per model or operation, decisions by outcome, failed checks by type, AI fallbacks and rejected outputs, rate-limit hits. Set `METRICS_TOKEN` to protect it.
+- `GET /api/health` for the Render health check.
+
+**Known limits of the demo.** There are no user accounts: anyone with the URL can act as the shopper or the guardian, and the MCP `shopping_for` field picks the profile. A real deployment would put the guardian and shopper pages behind sign-in (for example Log in with PayPal) and bind each mandate to the signed-in user. State lives in memory and JSON files, which suits a single instance; scaling out would need a database.
 
 ## Run it
 
@@ -145,7 +169,7 @@ npm install
 cp .env.example .env    # add PayPal sandbox + Gemini keys (optional)
 npm run build           # build the web UI (once)
 npm start               # http://localhost:3000
-npm test                # rule engine tests
+npm test                # 36 tests: rules, guardrails, and the API end to end in mock mode
 ```
 
 Without keys, PayPal and/or AI run in **mock mode**, so the full flow can be clicked through with zero setup.
@@ -189,10 +213,12 @@ src/catalog.js    shop catalogs, search, listing scanner
 src/profiles.js   Guardian mode profiles and rules
 src/evidence.js   signed receipts and dispute evidence packs
 src/mcp.js        MCP server: lets any AI agent pay through PaySentinel
-src/paypal.js     PayPal OAuth, Orders v2, authorize/capture/void
+src/paypal.js     PayPal OAuth, Orders v2, authorize/capture/void, disputes
+src/obs.js        JSON logs, request ids, metrics
+src/paths.js      data folder (DATA_DIR)
 web/              React UI (Vite + Tailwind v4 + Motion, Magic UI components)
 public/           fallback plain UI (used if web/ is not built)
-test/             rule engine tests
+test/             rule engine, guardrail and end-to-end API tests (36)
 ```
 
 ## Research behind it

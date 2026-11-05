@@ -6,6 +6,9 @@ import { search, getProduct, quote, scanListing, getShop, listShops, nameMatches
 import { geminiCall, aiMock, agentModels } from './ai.js';
 
 const round2 = (n) => Math.round(n * 100) / 100;
+const MAX_QTY = 100; // per line; the Sentinel checks quantity against the mandate anyway
+const MAX_LINES = 20;
+const MAX_TOOL_CALLS_PER_TURN = 8;
 
 export function makeCart() {
   const items = [];
@@ -14,13 +17,15 @@ export function makeCart() {
     shop: null,
     add(shopId, sku, quantity, reason) {
       const p = getProduct(shopId, sku);
-      if (!p) return { error: `No product ${sku} in ${shopId}` };
+      if (!p) return { error: `No product ${String(sku).slice(0, 40)} in ${String(shopId).slice(0, 40)}` };
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > MAX_QTY) return { error: `Quantity must be 1 to ${MAX_QTY}.` };
+      if (!items.find((i) => i.sku === sku) && items.length >= MAX_LINES) return { error: `A cart holds at most ${MAX_LINES} different items.` };
       if (this.shop && this.shop !== shopId) return { error: 'A cart can only hold items from one shop. Check out first.' };
       this.shop = shopId;
       const unit_price = quote(shopId, sku); // the shop's checkout price, which may differ from its listing
       const existing = items.find((i) => i.sku === sku);
-      if (existing) existing.quantity += quantity;
-      else items.push({ sku, name: p.name, quantity, unit_price, reason });
+      if (existing) existing.quantity = Math.min(MAX_QTY, existing.quantity + quantity);
+      else items.push({ sku, name: p.name, quantity, unit_price, reason: reason == null ? undefined : String(reason).slice(0, 200) });
       return { ok: true, cart: this.summary() };
     },
     summary() {
@@ -44,7 +49,7 @@ export function externalRun(items, agentName) {
   const cart = makeCart();
   const trace = [{ step: 'note', detail: `Cart built by an outside agent (${agentName}) through the PaySentinel MCP server.` }];
   for (const it of items) {
-    const r = cart.add(String(it.shop), String(it.sku), Math.max(1, Math.round(Number(it.quantity) || 1)), it.reason);
+    const r = cart.add(String(it.shop), String(it.sku), Math.min(MAX_QTY, Math.max(1, Math.round(Number(it.quantity) || 1))), it.reason);
     trace.push(r.error ? { step: 'add', detail: `Could not add ${it.sku}: ${r.error}` } : { step: 'add', detail: `Added ${it.quantity ?? 1} x ${it.sku}${it.reason ? `. Reason: "${it.reason}"` : ''}.` });
   }
   return { agent: `external:${agentName}`, trace, cart: cart.summary() };
@@ -167,13 +172,13 @@ Prefer the cheapest suitable option. Budget: ${mandate.currency} ${mandate.max_t
   const exec = (name, args) => {
     switch (name) {
       case 'search_products':
-        return { results: search(args.query, shops).slice(0, 8).map(({ score, ...r }) => r) };
+        return { results: search(String(args.query ?? '').slice(0, 100), shops).slice(0, 8).map(({ score, ...r }) => r) };
       case 'get_product': {
         const p = getProduct(args.shop, args.sku);
         return p ? { shop: args.shop, sku: p.sku, name: p.name, price: p.price, stock: p.stock, description: p.description } : { error: 'not found' };
       }
       case 'add_to_cart':
-        return cart.add(args.shop, args.sku, Math.max(1, Number(args.quantity) || 1), args.reason);
+        return cart.add(String(args.shop), String(args.sku), Math.min(MAX_QTY, Math.max(1, Math.round(Number(args.quantity) || 1))), args.reason);
       case 'checkout':
         return { ok: true, message: 'Checkout started. Payment pending.' };
       default:
@@ -185,7 +190,8 @@ Prefer the cheapest suitable option. Budget: ${mandate.currency} ${mandate.max_t
   for (let turn = 0; turn < 10; turn++) {
     const { content } = await geminiCall({ systemInstruction, contents, tools: TOOLS, generationConfig: { temperature: 0.2 } }, { model });
     contents.push(content); // keep the model's turn exactly as returned
-    const calls = (content.parts ?? []).filter((p) => p.functionCall).map((p) => p.functionCall);
+    // A runaway model cannot flood the cart or the trace: at most a few tool calls per turn, 10 turns per run.
+    const calls = (content.parts ?? []).filter((p) => p.functionCall).map((p) => p.functionCall).slice(0, MAX_TOOL_CALLS_PER_TURN);
     const said = (content.parts ?? []).map((p) => p.text).filter(Boolean).join(' ').trim();
     if (said) trace.push({ step: 'think', detail: said.slice(0, 300) });
     if (!calls.length) break;

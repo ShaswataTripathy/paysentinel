@@ -1,6 +1,6 @@
 {
   "name": "paysentinel",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A guard between AI shopping agents and your PayPal: every agent payment is held, checked against your intent, then captured or voided.",
   "type": "module",
   "main": "src/server.js",
@@ -21,6 +21,8 @@
     "@modelcontextprotocol/sdk": "^1.32.2",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
+    "express-rate-limit": "^7.5.1",
+    "helmet": "^8.3.0",
     "zod": "^4.6.7"
   },
   "bin": {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ScanSearch, Store, TriangleAlert } from 'lucide-react'
-import { api, money, type Shop } from '@/api'
+import { api, LIMITS, money, type Shop } from '@/api'
 import { Button, ErrorNote, Panel, Pill, SectionTitle, field } from '@/components/kit'
 import { BlurFade } from '@/components/ui/blur-fade'
 
@@ -44,15 +44,15 @@ export function SellerView() {
         <div className="grid gap-3 lg:grid-cols-[260px_1fr]">
           <label className="text-sm">
             <span className="mb-1 block text-muted-foreground">Shop name</span>
-            <input className={field} value={name} onChange={(e) => setName(e.target.value)} />
+            <input className={field} value={name} maxLength={LIMITS.shopName} onChange={(e) => setName(e.target.value)} aria-invalid={name.trim().length < 2} />
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-muted-foreground">Products</span>
-            <textarea className={`${field} min-h-[120px] font-mono text-[13px]`} value={raw} onChange={(e) => setRaw(e.target.value)} />
+            <textarea className={`${field} min-h-[120px] font-mono text-[13px]`} value={raw} maxLength={LIMITS.products} onChange={(e) => setRaw(e.target.value)} />
           </label>
         </div>
         <div className="mt-4 flex items-center gap-3">
-          <Button onClick={build} busy={busy} icon={<Store className="size-4" />}>Build my shop</Button>
+          <Button onClick={build} busy={busy} disabled={name.trim().length < 2 || !raw.trim()} icon={<Store className="size-4" />}>Build my shop</Button>
           {last && <span className="text-sm text-muted-foreground">{last.products.length} products listed.</span>}
         </div>
         {last?.removed?.length ? (

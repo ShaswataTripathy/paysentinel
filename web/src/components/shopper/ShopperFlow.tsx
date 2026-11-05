@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Bot, CreditCard, HeartHandshake, Lock, Sparkles, UserRound, Volume2, WandSparkles, Zap } from 'lucide-react'
-import { api, money, type Config, type Decision, type Mandate, type Profile, type Run } from '@/api'
+import { api, LIMITS, money, type Config, type Decision, type Mandate, type Profile, type Run } from '@/api'
 import { Button, ErrorNote, Panel, Pill, field } from '@/components/kit'
 import { ShimmerButton } from '@/components/ui/shimmer-button'
 import { AnimatedSpan, Terminal } from '@/components/ui/terminal'
@@ -212,7 +212,8 @@ export function ShopperFlow({ config, profiles, shopNames, onDecision }: { confi
           })}
         </div>
         <div className="mb-1 text-sm font-medium">What should it buy?</div>
-        <textarea className={cn(field, 'min-h-[76px] resize-y text-base')} value={task} onChange={(e) => setTask(e.target.value)} aria-label="Shopping request" />
+        <textarea className={cn(field, 'min-h-[76px] resize-y text-base')} value={task} maxLength={LIMITS.request} onChange={(e) => setTask(e.target.value)} aria-label="Shopping request" />
+        {task.length > LIMITS.request - 50 && <div className="mt-1 text-right text-xs text-muted-foreground">{task.length}/{LIMITS.request}</div>}
         <div className="mt-2 flex flex-wrap gap-2">
           {examples.map((t) => (
             <button key={t} onClick={() => setTask(t)} className="rounded-full border border-border bg-muted/50 px-3 py-1 text-xs text-blue-200/90 transition hover:border-blue-400/40 hover:bg-blue-500/10">
@@ -221,7 +222,7 @@ export function ShopperFlow({ config, profiles, shopNames, onDecision }: { confi
           ))}
         </div>
         <div className="mt-4 flex items-center gap-3">
-          <Button onClick={createMandate} busy={busy === 'mandate'} icon={<WandSparkles className="size-4" />}>
+          <Button onClick={createMandate} busy={busy === 'mandate'} disabled={task.trim().length < 3 || (!!busy && busy !== 'mandate')} icon={<WandSparkles className="size-4" />}>
             Create mandate
           </Button>
           {busy === 'mandate' && <span className="text-sm text-muted-foreground">Reading your request…</span>}

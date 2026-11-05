@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { HeartHandshake, ShieldAlert } from 'lucide-react'
-import { api, money, personName, type Decision, type GuardianRules, type Profile } from '@/api'
+import { api, LIMITS, money, personName, type Decision, type GuardianRules, type Profile } from '@/api'
 import { Button, ErrorNote, Panel, Pill, SectionTitle, StatusDot, field } from '@/components/kit'
 import { BlurFade } from '@/components/ui/blur-fade'
 import { cn } from '@/lib/utils'
@@ -12,8 +12,19 @@ function Rules({ profile, categories, onSaved }: { profile: Profile; categories:
   const [r, setR] = useState<GuardianRules>(profile.guardian!.rules)
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const toggle = (kind: 'allowed_categories' | 'blocked_categories', c: string) =>
-    setR({ ...r, [kind]: r[kind].includes(c) ? r[kind].filter((x) => x !== c) : [...r[kind], c] })
+  // Turning a category on in one list takes it out of the other: it cannot be both allowed and blocked.
+  const toggle = (kind: 'allowed_categories' | 'blocked_categories', c: string) => {
+    const other = kind === 'allowed_categories' ? 'blocked_categories' : 'allowed_categories'
+    const on = !r[kind].includes(c)
+    setR({ ...r, [kind]: on ? [...r[kind], c] : r[kind].filter((x) => x !== c), [other]: on ? r[other].filter((x) => x !== c) : r[other] })
+  }
+  const num = (v: number) => Number.isFinite(v) && v >= 0 && v <= LIMITS.money
+  const problem = !num(r.per_order_limit) || !num(r.weekly_limit)
+    ? `Limits must be numbers from 0 to ${LIMITS.money}.`
+    : r.per_order_limit > r.weekly_limit
+      ? 'The per-order limit cannot be higher than the weekly budget.'
+      : null
+  const setLimit = (k: 'per_order_limit' | 'weekly_limit', v: string) => setR({ ...r, [k]: v === '' ? NaN : Number(v) })
   const save = async () => {
     setBusy(true)
     try {
@@ -59,11 +70,11 @@ function Rules({ profile, categories, onSaved }: { profile: Profile; categories:
         <div className="grid gap-3">
           <label className="text-sm">
             <span className="mb-1 block text-muted-foreground">Per order, above this I approve (USD)</span>
-            <input type="number" min={0} className={field} value={r.per_order_limit} onChange={(e) => setR({ ...r, per_order_limit: Number(e.target.value) })} />
+            <input type="number" min={0} max={LIMITS.money} step="0.01" inputMode="decimal" className={field} value={Number.isNaN(r.per_order_limit) ? '' : r.per_order_limit} onChange={(e) => setLimit('per_order_limit', e.target.value)} aria-invalid={!!problem} />
           </label>
           <label className="text-sm">
             <span className="mb-1 block text-muted-foreground">Weekly budget (USD)</span>
-            <input type="number" min={0} className={field} value={r.weekly_limit} onChange={(e) => setR({ ...r, weekly_limit: Number(e.target.value) })} />
+            <input type="number" min={0} max={LIMITS.money} step="0.01" inputMode="decimal" className={field} value={Number.isNaN(r.weekly_limit) ? '' : r.weekly_limit} onChange={(e) => setLimit('weekly_limit', e.target.value)} aria-invalid={!!problem} />
           </label>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" className="size-4 accent-blue-500" checked={r.verified_shops_only} onChange={(e) => setR({ ...r, verified_shops_only: e.target.checked })} />
@@ -72,8 +83,8 @@ function Rules({ profile, categories, onSaved }: { profile: Profile; categories:
         </div>
       </div>
       <div className="mt-5 flex items-center gap-3">
-        <Button onClick={save} busy={busy}>Save rules</Button>
-        {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
+        <Button onClick={save} busy={busy} disabled={!!problem}>Save rules</Button>
+        {problem ? <span className="text-sm text-rose-300" role="alert">{problem}</span> : msg && <span className="text-sm text-muted-foreground">{msg}</span>}
       </div>
     </Panel>
   )

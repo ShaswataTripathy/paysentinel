@@ -6,10 +6,12 @@ services:
     plan: free
     buildCommand: npm ci && npm run build
     startCommand: npm start
-    healthCheckPath: /api/config
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
         value: 22
+      - key: NODE_ENV
+        value: production
       - key: PAYPAL_API_BASE
         value: https://api-m.sandbox.paypal.com
       - key: PAYPAL_CLIENT_ID
