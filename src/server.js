@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { extractMandate, explainDecision, normalizeProducts, draftDisputeResponse, aiMock, aiModels } from './ai.js';
 import { runAgent } from './agent.js';
 import { verify } from './sentinel.js';
-import { listShops, getShop, scanListing, upsertShop } from './catalog.js';
+import { listShops, getShop, scanListing, scanRawText, upsertShop } from './catalog.js';
 import { createHeldOrder, authorizeOrder, captureAuthorization, voidAuthorization, paypalMock, clientId, cardDemo } from './paypal.js';
 import { listProfiles, getProfile, updateRules, CATEGORIES } from './profiles.js';
 import { catalogSnapshot, signReceipt, evidencePack } from './evidence.js';
@@ -56,7 +56,9 @@ app.post(
     const products = await normalizeProducts(raw, id);
     if (need(products.length, res, 'No products with a name and price were found.')) return;
     const shop = upsertShop({ id, name, trusted: false, products });
-    res.status(201).json({ ...shop, products: shop.products.map((p) => ({ ...p, scan: scanListing(id, p) })) });
+    // Report instructions aimed at AI agents found in the seller's raw text, even if the AI clean-up dropped them.
+    const removed = scanRawText(raw);
+    res.status(201).json({ ...shop, removed, products: shop.products.map((p) => ({ ...p, scan: scanListing(id, p) })) });
   }),
 );
 

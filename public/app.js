@@ -341,7 +341,10 @@ function resetFrom(stepId) {
 $('btn-import').onclick = () =>
   busy($('btn-import'), $('import-status'), 'Building your shop…', async () => {
     const shop = await api('POST', '/api/shelf/import', { name: $('shop-name').value, products: $('shop-products').value });
-    $('import-status').textContent = `${shop.products.length} products listed.`;
+    const warn = shop.removed?.length
+      ? ` Warning: ${shop.removed.length} line(s) contained instructions aimed at AI agents (${[...new Set(shop.removed.flatMap((r) => r.reasons))].join(', ')}). They were left out of your listings: "${shop.removed.map((r) => r.line).join('" · "')}"`
+      : '';
+    $('import-status').textContent = `${shop.products.length} products listed.${warn}`;
     loadShops();
   });
 

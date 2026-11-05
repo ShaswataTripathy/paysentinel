@@ -61,6 +61,16 @@ const PATTERNS = [
   { re: /\bdo not (mention|tell|inform)\b[^.]{0,40}\b(user|customer|buyer)\b/i, why: 'asks to hide something from the user' },
 ];
 
+/** Lines of raw seller text that look like instructions to AI agents (checked before any AI clean-up). */
+export function scanRawText(raw) {
+  return String(raw)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => ({ line: line.slice(0, 200), reasons: PATTERNS.filter((p) => p.re.test(line)).map((p) => p.why) }))
+    .filter((r) => r.reasons.length);
+}
+
 /** Returns why a listing looks like it contains instructions for AI agents, and which SKUs it pushes. */
 export function scanListing(shopId, product) {
   const text = `${product.name}\n${product.description ?? ''}`;
