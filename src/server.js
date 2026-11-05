@@ -1,4 +1,4 @@
-import 'dotenv/config'; // must be first: other modules read env at import time
+import 'dotenv/config'; // keep first
 import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -25,8 +25,7 @@ if (PROD && usingDevSecret) {
 const LOG_FILE = dataFile('decisions.json');
 const MAX_DECISIONS = 500;
 
-// ---------------- errors & validation ----------------
-/** An error whose message is safe to show to the caller. Anything else becomes a generic 500. */
+// errors & validation
 export class HttpError extends Error {
   constructor(status, message) {
     super(message);
@@ -39,19 +38,17 @@ const fail = (status, message) => {
 };
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 
-/** Trimmed string from user input, length-capped; '' if missing or not a string/number. */
 const str = (v, max) => (typeof v === 'string' || typeof v === 'number' ? String(v).trim().slice(0, max) : '');
-const ID = /^[A-Za-z0-9-]{1,64}$/; // UUIDs, PayPal order ids, profile ids
+const ID = /^[A-Za-z0-9-]{1,64}$/;
 const idParam = (req, name) => (ID.test(req.params[name]) ? req.params[name] : fail(400, `Invalid ${name}.`));
 
-// ---------------- short-lived state (bounded, expires) ----------------
-/** A Map with a max size and a time-to-live, so a public server cannot be filled up with abandoned carts. */
+// short-lived state (bounded, expires)
 function ttlStore(ttlMs, max) {
   const m = new Map();
   const sweep = () => {
     const now = Date.now();
     for (const [k, v] of m) if (v.exp < now) m.delete(k);
-    while (m.size > max) m.delete(m.keys().next().value); // oldest first
+    while (m.size > max) m.delete(m.keys().next().value);
   };
   setInterval(sweep, 60_000).unref();
   return {
@@ -67,16 +64,15 @@ function ttlStore(ttlMs, max) {
   };
 }
 const HOUR = 3_600_000;
-const mandates = ttlStore(6 * HOUR, 5000); // id -> mandate
-const runs = ttlStore(6 * HOUR, 5000); // run id -> agent run (kept server-side so the browser cannot edit the cart)
-const checkouts = ttlStore(6 * HOUR, 5000); // paypal order id -> { mandate, run } (PayPal holds last up to 29 days, approvals far less)
+const mandates = ttlStore(6 * HOUR, 5000);
+const runs = ttlStore(6 * HOUR, 5000); // carts stay server side
+const checkouts = ttlStore(6 * HOUR, 5000); // order id -> { mandate, run }
 
-// ---------------- decision log (persisted) ----------------
+// decision log (persisted)
 function loadDecisions() {
   try {
     return fs.existsSync(LOG_FILE) ? JSON.parse(fs.readFileSync(LOG_FILE, 'utf8')) : [];
   } catch (e) {
-    // A corrupt log must not stop payments: keep a copy for inspection and start fresh.
     const bad = `${LOG_FILE}.corrupt-${Date.now()}`;
     fs.renameSync(LOG_FILE, bad);
     log('error', 'decisions.load_failed', { error: e.message, movedTo: bad });
@@ -84,7 +80,6 @@ function loadDecisions() {
   }
 }
 const decisions = loadDecisions();
-/** Atomic write (temp file + rename), and the in-memory log stays bounded too. */
 function saveLog() {
   if (decisions.length > MAX_DECISIONS) decisions.splice(0, decisions.length - MAX_DECISIONS);
   const tmp = `${LOG_FILE}.tmp`;
@@ -93,10 +88,10 @@ function saveLog() {
 }
 const findDecision = (id) => decisions.find((x) => x.id === id);
 
-// ---------------- app & middleware ----------------
+// app & middleware
 const app = express();
 app.disable('x-powered-by');
-app.set('trust proxy', 1); // behind Render's proxy: rate limits use the real client IP
+app.set('trust proxy', 1); // Render proxy
 
 app.use(requestLogger);
 app.use(
@@ -104,12 +99,11 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        // The PayPal JS SDK loads from paypal.com and renders its buttons in paypal.com iframes.
         scriptSrc: ["'self'", 'https://www.paypal.com', 'https://*.paypal.com'],
         frameSrc: ['https://*.paypal.com'],
         connectSrc: ["'self'", 'https://*.paypal.com'],
         imgSrc: ["'self'", 'data:', 'https://*.paypal.com', 'https://*.paypalobjects.com'],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], // animation libraries set inline styles
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com'],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
@@ -117,21 +111,19 @@ app.use(
         frameAncestors: ["'none'"],
       },
     },
-    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }, // PayPal approval opens a popup that reports back
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' }, // PayPal popup
   }),
 );
 
 app.use(express.json({ limit: '100kb' }));
 
-// CSRF: browsers can send cross-site form posts without asking first, but never with a JSON content type.
-// Every state-changing API call must therefore be JSON (the UI and the MCP server always send it).
+// CSRF: writes must be JSON, a cross-site form can't send that
 app.use('/api', (req, res, next) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !req.is('application/json'))
     return res.status(415).json({ error: 'Send requests as application/json.' });
   next();
 });
 
-// Rate limits: generous for normal use, tight where each call costs Gemini quota or touches PayPal.
 const limiter = (windowMs, limit, what) =>
   rateLimit({
     windowMs,
@@ -147,18 +139,17 @@ app.use('/api', limiter(60_000, 240, 'API'));
 const aiLimit = limiter(60_000, 12, 'AI');
 const payLimit = limiter(60_000, 30, 'payment');
 
-// The React UI (web/, built to web/dist) when it has been built; otherwise the original plain UI in public/.
+// web/dist if built, else public/
 const WEB_DIST = path.join(ROOT, 'web', 'dist');
 const UI_DIR = fs.existsSync(path.join(WEB_DIST, 'index.html')) ? WEB_DIST : path.join(ROOT, 'public');
-app.use('/assets', express.static(path.join(UI_DIR, 'assets'), { immutable: true, maxAge: '1y' })); // hashed file names
+app.use('/assets', express.static(path.join(UI_DIR, 'assets'), { immutable: true, maxAge: '1y' }));
 app.use(express.static(UI_DIR, { maxAge: 0 }));
 
-// ---------------- health, config, metrics ----------------
+// health, config, metrics
 app.get('/api/health', (req, res) => res.json({ ok: true, paypal: paypalMock ? 'mock' : 'sandbox', ai: aiMock ? 'offline' : 'gemini' }));
 
 app.get('/api/config', (req, res) => res.json({ paypalMock, cardDemo, aiMock, aiModels: aiMock ? null : aiModels, paypalClientId: clientId }));
 
-// Counters and latencies (no personal data). Protected by METRICS_TOKEN when it is set.
 app.get('/api/metrics', (req, res) => {
   const token = process.env.METRICS_TOKEN;
   if (token && req.get('authorization') !== `Bearer ${token}`) return res.status(401).json({ error: 'Unauthorized' });
@@ -167,7 +158,7 @@ app.get('/api/metrics', (req, res) => {
   res.json({ ...metrics(), decisions_logged: decisions.length, payment_outcomes: outcomes });
 });
 
-// ---------------- shops ----------------
+// shops
 app.get('/api/shops', (req, res) => res.json(listShops()));
 
 app.get('/api/shops/:id', (req, res) => {
@@ -176,7 +167,6 @@ app.get('/api/shops/:id', (req, res) => {
   res.json({ ...shop, products: shop.products.map(({ checkout_price, ...p }) => ({ ...p, scan: scanListing(shop.id, p) })) });
 });
 
-// Shelf: messy product list -> agent-readable shop
 app.post(
   '/api/shelf/import',
   aiLimit,
@@ -185,13 +175,12 @@ app.post(
     const raw = str(req.body?.products, 20_000);
     if (name.length < 2 || !raw) fail(400, 'A shop name (2-60 characters) and a product list are required.');
     const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || `shop-${Date.now()}`;
-    // A seller must never be able to replace a verified shop's catalog: the Sentinel checks prices against it.
     if (isProtectedShop(id)) fail(409, 'That name belongs to an existing verified shop. Choose another name.');
     if (!getShop(id) && shelfShopCount() >= MAX_SHELF_SHOPS) fail(409, 'The demo shelf is full. Try again later.');
     const products = await normalizeProducts(raw, id);
     if (!products.length) fail(400, 'No products with a name and price were found.');
     const shop = upsertShop({ id, name, trusted: false, products });
-    // Report instructions aimed at AI agents found in the seller's raw text, even if the AI clean-up dropped them.
+    // scan the raw text, Gemini may have dropped the injected lines
     const removed = scanRawText(raw);
     count('shelf_imports_total', { flagged: removed.length > 0 });
     log('info', 'shelf.import', { reqId: req.id, shop: id, products: products.length, flaggedLines: removed.length });
@@ -199,7 +188,7 @@ app.post(
   }),
 );
 
-// ---------------- Guardian mode ----------------
+// Guardian mode
 app.get('/api/profiles', (req, res) => res.json({ profiles: listProfiles(), categories: CATEGORIES }));
 
 app.put(
@@ -208,13 +197,12 @@ app.put(
     const id = idParam(req, 'id');
     if (!getProfile(id)?.guardian) fail(404, 'Profile has no guardian');
     if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) fail(400, 'Send the rules as a JSON object.');
-    const profile = updateRules(id, req.body); // throws HttpError-like { status: 400 } on invalid input
+    const profile = updateRules(id, req.body);
     log('info', 'guardian.rules_updated', { reqId: req.id, profile: id, rules: profile.guardian.rules });
     res.json(profile);
   }),
 );
 
-/** What this person's agent has already spent in the last 7 days (captured payments only). */
 function spentThisWeek(profileId) {
   const since = Date.now() - 7 * 864e5;
   return decisions
@@ -222,7 +210,7 @@ function spentThisWeek(profileId) {
     .reduce((s, d) => s + Number(d.order.total), 0);
 }
 
-// ---------------- 1. intent -> mandate ----------------
+// 1. intent -> mandate
 app.post(
   '/api/mandates',
   aiLimit,
@@ -239,7 +227,7 @@ app.post(
   }),
 );
 
-// ---------------- 2. agent shops ----------------
+// 2. agent shops
 app.post(
   '/api/mandates/:id/run',
   aiLimit,
@@ -257,9 +245,8 @@ app.post(
   }),
 );
 
-// ---------------- 2b. outside agents (MCP server) ----------------
-// An outside agent sees every shop, like on the open web. Listings are returned as written, hidden text included:
-// PaySentinel does not try to make the agent safe, it makes the payment safe.
+// 2b. outside agents (MCP server)
+// outside agents see every shop and the raw listings
 app.get('/api/search', (req, res) => {
   const q = str(req.query.q, 100);
   if (!q) fail(400, 'Give a search query.');
@@ -298,7 +285,7 @@ app.post(
   }),
 );
 
-// ---------------- 3. hold the money ----------------
+// 3. hold the money
 app.post(
   '/api/checkout',
   payLimit,
@@ -310,23 +297,22 @@ app.post(
     const mandate = mandates.get(run.mandateId);
     if (!mandate) fail(404, 'The mandate for this cart expired. Create it again.');
     if (run.checkedOut) fail(409, 'This cart was already sent to PayPal. Let the agent shop again.');
-    run.checkedOut = true; // one payment per agent run (set before the await so a double click cannot create two orders)
+    run.checkedOut = true;
     try {
       const method = req.body?.method === 'card' ? 'card' : 'paypal';
       const { id, approveUrl } = await createHeldOrder(run.cart, { currency: mandate.currency, reference: mandate.id.slice(0, 32), testCard: method === 'card' });
-      // Keep the mandate with the checkout: the decision must use the mandate the cart was built for.
       checkouts.set(id, { mandate, run });
       count('orders_created_total', { method });
       log('info', 'order.created', { reqId: req.id, orderId: id, runId, method, total: run.cart.total, shop: run.cart.shop });
       res.status(201).json({ orderId: id, approveUrl: approveUrl ?? null });
     } catch (e) {
-      run.checkedOut = false; // PayPal did not create the order, so the cart can be retried
+      run.checkedOut = false;
       throw e;
     }
   }),
 );
 
-// ---------------- 4. buyer approved: authorize, verify, decide ----------------
+// 4. buyer approved: authorize, verify, decide
 app.post(
   '/api/orders/:orderId/authorize',
   payLimit,
@@ -335,18 +321,18 @@ app.post(
     const pending = checkouts.get(orderId);
     if (!pending) fail(404, 'Unknown or already processed checkout.');
     if (pending.processing) fail(409, 'This payment is already being processed.');
-    pending.processing = true; // a double click (or a retrying agent) must not authorize and capture twice
+    pending.processing = true;
     try {
       const { mandate, run } = pending;
       const profile = getProfile(mandate.profileId);
       const guardian = profile?.guardian ? { ...profile.guardian, spentThisWeek: spentThisWeek(profile.id) } : null;
 
-      const held = await authorizeOrder(orderId); // what PayPal actually holds
+      const held = await authorizeOrder(orderId);
       let result;
       try {
-        result = verify(mandate, held, guardian); // fixed rules, no AI
+        result = verify(mandate, held, guardian);
       } catch (e) {
-        // Fail closed: if the checks themselves break, release the money instead of leaving it held unchecked.
+        // fail closed
         await voidAuthorization(held.authorizationId).catch((ve) => log('error', 'payment.void_failed', { orderId, error: ve.message }));
         throw e;
       }
@@ -389,7 +375,7 @@ app.post(
   }),
 );
 
-// ---------------- 5. shopper resolves a borderline order ----------------
+// 5. shopper resolves a borderline order
 app.post(
   '/api/decisions/:id/:action(approve|reject)',
   payLimit,
@@ -397,7 +383,7 @@ app.post(
     const d = findDecision(idParam(req, 'id'));
     if (!d) fail(404, 'Decision not found');
     if (d.decision !== 'review' || d.resolvedBy || d.resolving) fail(409, 'This payment is not waiting for approval.');
-    d.resolving = true; // a double click must not capture twice
+    d.resolving = true;
     try {
       d.payment =
         req.params.action === 'approve'
@@ -423,7 +409,7 @@ app.get('/api/decisions/:id', (req, res) => {
   res.json(d);
 });
 
-// ---------------- 6. disputes: answer with the signed evidence pack ----------------
+// 6. disputes: answer with the signed evidence pack
 app.get('/api/decisions/:id/evidence', (req, res) => {
   const d = findDecision(idParam(req, 'id'));
   if (!d) fail(404, 'Decision not found');
@@ -437,8 +423,7 @@ const capturedDecision = (req) => {
   return d;
 };
 
-// Mock mode only: a buyer says "my AI assistant bought this without my permission".
-// In sandbox, open the dispute as the sandbox buyer in the PayPal Resolution Center instead.
+// mock only, in sandbox the buyer opens the dispute on PayPal
 app.post(
   '/api/decisions/:id/dispute/simulate',
   wrap(async (req, res) => {
@@ -497,7 +482,7 @@ app.post(
   }),
 );
 
-// ---------------- fallbacks & errors ----------------
+// fallbacks & errors
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
 // eslint-disable-next-line no-unused-vars
@@ -505,7 +490,6 @@ app.use((err, req, res, next) => {
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'The request body is not valid JSON.' });
   if (err.type === 'entity.too.large') return res.status(413).json({ error: 'The request is too large.' });
   if (err.expose && err.status < 500) return res.status(err.status).json({ error: err.message });
-  // Upstream failures (PayPal, Gemini) carry a useful, secret-free message; anything else stays generic.
   const upstream = /^(PayPal|Gemini)\b/.test(err.message ?? '');
   const status = upstream ? 502 : 500;
   count('errors_total', { status, upstream });
@@ -525,7 +509,6 @@ const server = app.listen(port, () => {
   });
 });
 
-// Graceful shutdown (Render sends SIGTERM on deploy): finish in-flight requests, then exit.
 for (const sig of ['SIGTERM', 'SIGINT'])
   process.on(sig, () => {
     log('info', 'shutdown', { signal: sig });

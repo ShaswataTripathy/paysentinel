@@ -12,7 +12,7 @@ function Rules({ profile, categories, onSaved }: { profile: Profile; categories:
   const [r, setR] = useState<GuardianRules>(profile.guardian!.rules)
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  // Turning a category on in one list takes it out of the other: it cannot be both allowed and blocked.
+  // a category can't be in both lists
   const toggle = (kind: 'allowed_categories' | 'blocked_categories', c: string) => {
     const other = kind === 'allowed_categories' ? 'blocked_categories' : 'allowed_categories'
     const on = !r[kind].includes(c)

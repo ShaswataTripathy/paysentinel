@@ -8,7 +8,6 @@ import { NumberTicker } from '@/components/ui/number-ticker'
 import { ShineBorder } from '@/components/ui/shine-border'
 import { cn } from '@/lib/utils'
 
-/** The decision as the shopper sees it now (a resolved review shows its final outcome). */
 export const outcome = (d: Decision): 'capture' | 'void' | 'review' =>
   d.decision === 'review' && d.resolvedBy ? (d.payment.action === 'captured' ? 'capture' : 'void') : d.decision
 

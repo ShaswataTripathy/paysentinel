@@ -1,5 +1,4 @@
-// Typed client for the PaySentinel API (src/server.js). The backend owns every money decision;
-// this UI only displays it.
+// API client
 
 export type CheckStatus = 'pass' | 'review' | 'block'
 export interface Check { id: string; label: string; status: CheckStatus; detail: string }
@@ -86,7 +85,7 @@ export interface EvidencePack {
   [key: string]: unknown
 }
 
-/** Limits shared with the server (src/server.js), so the UI can explain them before a request fails. */
+// same limits as the server
 export const LIMITS = { request: 500, shopName: 60, products: 20_000, disputeNotes: 2000, disputeMin: 20, money: 10_000 }
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
@@ -132,13 +131,12 @@ export const api = {
 export const money = (n: number, cur = 'USD') =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: cur || 'USD' }).format(Number(n) || 0)
 
-/** "Mom (Kamala, 74)" -> "Kamala". Profile names keep the family relation; the UI shows the person's name. */
+// "Mom (Kamala, 74)" -> "Kamala"
 export const personName = (profileName?: string | null) => {
   if (!profileName || profileName === 'Me') return null
   return profileName.match(/\(([^,)]+)/)?.[1]?.trim() ?? profileName
 }
 
-/** How a payment's owner is shown: "My assistant" or "Kamala's assistant (Guardian mode)". */
 export const assistantLabel = (profileName?: string | null) => {
   const who = personName(profileName)
   return who ? `${who}'s assistant (Guardian mode)` : 'My assistant'

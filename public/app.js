@@ -24,7 +24,7 @@ async function busy(btn, statusEl, label, fn) {
 
 const unlock = (id, on = true) => $(id).classList.toggle('locked', !on);
 
-// ---------------- tabs ----------------
+// tabs
 document.querySelectorAll('.tab').forEach((t) =>
   t.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === t));
@@ -35,7 +35,7 @@ document.querySelectorAll('.tab').forEach((t) =>
   }),
 );
 
-// ---------------- config ----------------
+// config
 const state = { mandate: null, run: null, config: null };
 const config = await api('GET', '/api/config');
 state.config = config;
@@ -44,7 +44,7 @@ $('modes').innerHTML = `
   <span class="badge ${config.aiMock ? '' : 'live'}" title="${config.aiModels ? esc(`agent: ${config.aiModels.agent}, tasks: ${config.aiModels.tasks}`) : ''}">AI: ${config.aiMock ? 'offline' : 'Gemini'}</span>`;
 if (config.aiMock) $('agent-mode').querySelector('[value=gemini]').disabled = true;
 
-// ---------------- profiles (Guardian mode) ----------------
+// profiles (Guardian mode)
 const EXAMPLES = {
   self: ['Buy one pack of AA batteries under $15', 'Buy one pack of AA batteries under $9.50'],
   guarded: [
@@ -73,7 +73,7 @@ $('profile').onchange = () => {
 };
 renderProfileHint();
 
-// ---------------- 1. mandate ----------------
+// 1. mandate
 $('btn-mandate').onclick = () =>
   busy($('btn-mandate'), $('mandate-status'), 'Reading your request…', async () => {
     resetFrom('step-agent');
@@ -93,7 +93,7 @@ $('btn-mandate').onclick = () =>
     unlock('step-agent', !m.missing.length);
   });
 
-// ---------------- 2. agent ----------------
+// 2. agent
 $('btn-run').onclick = () =>
   busy($('btn-run'), $('run-status'), 'Agent is shopping…', async () => {
     resetFrom('step-pay');
@@ -109,7 +109,7 @@ $('btn-run').onclick = () =>
     if (c.items.length) preparePayment();
   });
 
-// ---------------- 3. PayPal hold ----------------
+// 3. PayPal hold
 let paypalLoaded = null;
 function loadPayPal() {
   paypalLoaded ??= new Promise((resolve, reject) => {
@@ -134,7 +134,7 @@ async function finishCheckout(orderId) {
   showVerdict(d);
 }
 
-// ---------------- read aloud (accessibility) ----------------
+// read aloud (accessibility)
 const shopNames = Object.fromEntries((await api('GET', '/api/shops')).map((s) => [s.id, { name: s.name, trusted: s.trusted }]));
 const spoken = (n, cur) => `${Number(n).toFixed(2)} ${cur === 'USD' ? 'US dollars' : cur}`;
 
@@ -190,7 +190,7 @@ $('btn-mock-pay').onclick = () =>
     await finishCheckout(await startCheckout());
   });
 
-// ---------------- 4. verdict ----------------
+// 4. verdict
 const HEAD = {
   capture: ['Payment captured', 'Every check passed, so PayPal charged the held amount.'],
   void: ['Payment blocked', 'PayPal released the held money. Nothing was charged.'],
@@ -231,7 +231,7 @@ function showVerdict(d) {
   refreshGuardianCount();
 }
 
-// ---------------- Guardian view ----------------
+// Guardian view
 async function refreshGuardianCount() {
   const rows = await api('GET', '/api/decisions');
   const n = rows.filter((d) => d.decision === 'review' && !d.resolvedBy && d.approver !== 'you').length;
@@ -337,7 +337,7 @@ function resetFrom(stepId) {
   $('verdict').innerHTML = '';
 }
 
-// ---------------- seller / Shelf ----------------
+// seller / Shelf
 $('btn-import').onclick = () =>
   busy($('btn-import'), $('import-status'), 'Building your shop…', async () => {
     const shop = await api('POST', '/api/shelf/import', { name: $('shop-name').value, products: $('shop-products').value });
@@ -368,7 +368,7 @@ async function loadShops() {
 }
 $('btn-shops').onclick = loadShops;
 
-// ---------------- log ----------------
+// log
 async function loadLog() {
   const rows = await api('GET', '/api/decisions');
   $('log').tBodies[0].innerHTML = rows.length
@@ -385,7 +385,7 @@ async function loadLog() {
   $('log').querySelectorAll('[data-evidence]').forEach((b) => (b.onclick = () => showEvidence(b.dataset.evidence)));
 }
 
-// ---------------- evidence & disputes ----------------
+// evidence & disputes
 $('btn-evidence-close').onclick = () => $('evidence-card').classList.add('hidden');
 
 async function showEvidence(id) {

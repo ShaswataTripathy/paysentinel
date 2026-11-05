@@ -1,5 +1,4 @@
-// PayPal Orders v2 + Payments v2 (sandbox): hold money with intent AUTHORIZE, then capture or void.
-// Falls back to an in-memory mock when no credentials are set.
+// PayPal Orders v2 / Payments v2: AUTHORIZE, then capture or void. Mock mode without credentials.
 import { randomUUID } from 'node:crypto';
 import { log, timed } from './obs.js';
 
@@ -24,19 +23,15 @@ async function getToken() {
     },
     body: 'grant_type=client_credentials',
   });
-  // Never echo the response body: it can contain request details. The status is enough to diagnose.
   if (!res.ok) throw new Error(`PayPal auth failed (${res.status}). Check PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET.`);
   const d = await res.json();
   token = { value: d.access_token, expiresAt: Date.now() + d.expires_in * 1000 };
   return token.value;
 }
 
-/**
- * One PayPal REST call. `requestId` makes the call idempotent: PayPal returns the first result for a repeated id,
- * so a retried capture can never charge twice.
- */
+// requestId = PayPal-Request-Id, fixed for capture/void so retries are idempotent
 async function pp(method, path, body, { requestId = randomUUID() } = {}) {
-  const op = path.replace(/\/[A-Z0-9-]{10,}(?=\/|$|\?)/g, '/:id').replace(/\?.*$/, ''); // metric label without ids
+  const op = path.replace(/\/[A-Z0-9-]{10,}(?=\/|$|\?)/g, '/:id').replace(/\?.*$/, '');
   return timed('paypal_call', { op: `${method} ${op}` }, async () => {
     const res = await fetch(`${BASE}${path}`, {
       method,
@@ -54,7 +49,7 @@ async function pp(method, path, body, { requestId = randomUUID() } = {}) {
     try {
       data = text ? JSON.parse(text) : null;
     } catch {
-      data = null; // e.g. an HTML error page from a proxy
+      data = null;
     }
     if (!res.ok) {
       const debugId = res.headers.get('paypal-debug-id') ?? data?.debug_id;
@@ -68,7 +63,6 @@ async function pp(method, path, body, { requestId = randomUUID() } = {}) {
 
 const money = (n) => Number(n).toFixed(2);
 
-/** PayPal's view of an order, in the shape the Sentinel checks. */
 function toOrderView(o) {
   const pu = o.purchase_units?.[0] ?? {};
   return {
@@ -83,13 +77,11 @@ function toOrderView(o) {
   };
 }
 
-// ---------------- mock ----------------
+// mock
 const mock = new Map();
 
-// ---------------- API ----------------
-/** Create an order that only reserves money (intent AUTHORIZE). The buyer approves it with PayPal. */
-// One-click demo path for judges: pay with PayPal's published sandbox test card, so no buyer login is needed.
-// PayPal places the hold immediately when the order is created; nothing else in the flow changes.
+// API
+// PAYPAL_CARD_DEMO: pay with the sandbox test card, PayPal authorizes at creation
 export const cardDemo = !paypalMock && /^(1|true|on)$/i.test(process.env.PAYPAL_CARD_DEMO ?? '');
 const TEST_CARD = {
   number: process.env.PAYPAL_TEST_CARD_NUMBER || '4032039317984658', // PayPal sandbox test Visa
@@ -98,7 +90,7 @@ const TEST_CARD = {
   name: 'Sandbox Test Buyer',
   billing_address: { address_line_1: '1 Main St', admin_area_2: 'San Jose', admin_area_1: 'CA', postal_code: '95131', country_code: 'US' },
 };
-const preAuthorized = new Map(); // order id -> order view, for orders PayPal authorized at creation
+const preAuthorized = new Map();
 
 export async function createHeldOrder(cart, { currency = 'USD', reference, testCard = false }) {
   if (paypalMock) {
@@ -137,12 +129,10 @@ export async function createHeldOrder(cart, { currency = 'USD', reference, testC
     if (!view.authorizationId) throw new Error(`PayPal did not authorize the test card (order status ${order.status}).`);
     preAuthorized.set(order.id, view);
   }
-  // Where the buyer approves this order on PayPal (used by outside agents that have no browser button).
   const approveUrl = order.links?.find((l) => l.rel === 'payer-action' || l.rel === 'approve')?.href ?? null;
   return { id: order.id, approveUrl };
 }
 
-/** After buyer approval: place the hold. Returns PayPal's view of the order, including the authorization id. */
 export async function authorizeOrder(orderId) {
   if (paypalMock) {
     const o = mock.get(orderId);
@@ -157,7 +147,7 @@ export async function authorizeOrder(orderId) {
   }
   const o = pre ?? toOrderView(await pp('POST', `/v2/checkout/orders/${encodeURIComponent(orderId)}/authorize`, {}));
   if (o.items.length) return o;
-  // Some responses omit line items; read the full order so the Sentinel checks what PayPal actually holds.
+  // authorize response can omit items
   const full = toOrderView(await pp('GET', `/v2/checkout/orders/${encodeURIComponent(orderId)}`));
   return { ...full, authorizationId: o.authorizationId ?? full.authorizationId, authorizationStatus: o.authorizationStatus ?? full.authorizationStatus };
 }
@@ -169,12 +159,10 @@ export async function captureAuthorization(authId) {
   return { id: c.id, status: c.status };
 }
 
-// ---------------- Disputes ----------------
-// Sandbox: a sandbox buyer opens the case in the sandbox Resolution Center; we find it by capture id.
-// provide-evidence (multipart: `input` JSON + `evidence-file`) was verified on a real sandbox case.
+// Disputes
+// sandbox: buyer opens the case in the Resolution Center, we look it up by capture id
 const mockDisputes = new Map();
 
-/** Mock only: a buyer claims their AI assistant bought this without permission. */
 export function simulateDispute(captureId, amount, currency) {
   const id = `MOCK-PP-D-${captureId.slice(-6)}`;
   const d = {
@@ -206,7 +194,6 @@ export async function findDisputeForCapture(captureId) {
   };
 }
 
-/** Send our notes plus the signed evidence pack (as a JSON file) to PayPal. */
 export async function provideEvidence(disputeId, notes, pack) {
   if (paypalMock) {
     const d = mockDisputes.get(disputeId);
@@ -219,15 +206,14 @@ export async function provideEvidence(disputeId, notes, pack) {
   const post = async (action, form) => {
     const res = await fetch(`${BASE}/v1/customer/disputes/${encodeURIComponent(disputeId)}/${action}`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${await getToken()}` }, // fetch sets the multipart boundary itself
+      headers: { Authorization: `Bearer ${await getToken()}` },
       body: form,
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     return { ok: res.ok, status: res.status, text: await res.text() };
   };
 
-  // 1. Formal evidence, using the evidence type PayPal is asking this seller for (PayPal rejects other types
-  //    with EVIDENCE_TYPE_IS_NOT_ALLOWED, e.g. it wants PROOF_OF_FULFILLMENT for "not received").
+  // must use the requested evidence type, OTHER gives EVIDENCE_TYPE_IS_NOT_ALLOWED
   const dispute = await pp('GET', `/v1/customer/disputes/${encodeURIComponent(disputeId)}`);
   const requested = (dispute.evidences ?? []).find((e) => e.source === 'REQUESTED_FROM_SELLER')?.evidence_type;
   const evidenceType = requested ?? 'OTHER';
@@ -237,8 +223,7 @@ export async function provideEvidence(disputeId, notes, pack) {
   const r1 = await post('provide-evidence', ev);
   if (r1.ok) return { status: 'UNDER_REVIEW', channel: 'provide-evidence', evidenceType };
 
-  // 2. Early stage (inquiry): PayPal does not accept evidence yet, so answer the buyer in the case thread
-  //    with the same reply and the signed evidence pack attached.
+  // inquiry stage doesn't take evidence, reply in the thread instead
   if (r1.status === 422 || r1.status === 400) {
     const msg = new FormData();
     msg.append('input', new Blob([JSON.stringify({ message: notes.slice(0, 2000) })], { type: 'application/json' }));

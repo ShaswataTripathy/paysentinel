@@ -1,11 +1,7 @@
 #!/usr/bin/env node
-// PaySentinel MCP server: lets any MCP-capable AI agent (Claude Desktop, Claude Code, an Agent Toolkit agent…)
-// shop and pay through PaySentinel. The agent never touches money directly: every payment is held by PayPal,
-// checked against the user's mandate, then captured, sent for approval, or voided.
-//
-// It talks to a running PaySentinel over HTTP, so it works with a local server or the hosted demo:
+// MCP server for PaySentinel. Talks to a running instance over HTTP:
 //   PAYSENTINEL_URL=http://localhost:3000 node src/mcp.js
-// Logs go to stderr: stdout is the MCP channel.
+// stdout is the MCP channel, so log to stderr only.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
@@ -36,7 +32,6 @@ const tool = (fn) => async (args) => {
   }
 };
 
-/** What PaySentinel decided, in words an agent can relay to its user. */
 function describeDecision(d) {
   const head = {
     capture: 'CAPTURED: every check passed and PayPal charged the held amount.',

@@ -1,21 +1,18 @@
-// Evidence packs: what PaySentinel knew and decided for one agent payment, signed so it can't be quietly edited.
-// Used to answer PayPal disputes such as "my AI assistant bought this without my permission".
+// Signed evidence packs used to answer disputes.
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { getShop, getProduct } from './catalog.js';
 
 const DEV_SECRET = 'paysentinel-dev-secret-change-me';
 const SECRET = process.env.RECEIPT_SECRET || DEV_SECRET;
-/** True when receipts are signed with the public development key (the server refuses this in production). */
 export const usingDevSecret = SECRET === DEV_SECRET;
 
-/** Stable JSON: keys sorted, so the same content always hashes the same way. */
+// sorted keys so the hash is stable
 function canonical(v) {
   if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
   if (v && typeof v === 'object') return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`).join(',')}}`;
   return JSON.stringify(v);
 }
 
-/** Listed prices and shop status at decision time (catalogs can change later). */
 export function catalogSnapshot(order) {
   const shop = getShop(order.shop);
   return {
@@ -28,7 +25,6 @@ export function catalogSnapshot(order) {
   };
 }
 
-/** The facts that matter in a dispute, in one object. */
 function receiptBody(d) {
   return {
     decision_id: d.id,
@@ -53,7 +49,6 @@ function receiptBody(d) {
   };
 }
 
-/** Sign once the payment is final (captured or voided). */
 export function signReceipt(d) {
   const body = receiptBody(d);
   const text = canonical(body);
@@ -71,7 +66,6 @@ export function verifyReceipt(d) {
   return expected.length === got.length && timingSafeEqual(expected, got);
 }
 
-/** Everything a merchant or PayPal needs to judge an "unauthorized agent purchase" claim. */
 export function evidencePack(d) {
   return {
     title: 'PaySentinel evidence pack',

@@ -73,7 +73,7 @@ test('untrusted but otherwise correct shop needs approval', () => {
   assert.equal(r.decision, 'review');
 });
 
-// ---------------- Guardian mode ----------------
+// Guardian mode
 const guardian = (spentThisWeek = 0) => ({
   name: 'Arjun (son)',
   spentThisWeek,
@@ -124,7 +124,7 @@ test('offline parser ignores scam chatter and keeps product words', async () => 
   assert.deepEqual(r.must_match, ['basmati', 'rice']);
 });
 
-// ---------------- evidence packs ----------------
+// evidence packs
 test('evidence receipt verifies, and any edit breaks it', async () => {
   const { signReceipt, verifyReceipt, evidencePack, catalogSnapshot } = await import('../src/evidence.js');
   const o = { id: 'O1', authorizationId: 'A1', ...riceOrder(1) };

@@ -15,10 +15,10 @@ const EXAMPLES: Record<string, string[]> = {
 
 type Step = 1 | 2 | 3 | 4
 
-/** Plain-language description of a profile, built from its real rules so it stays accurate when they change. */
+// card text built from the profile's rules
 function describeProfile(p: Profile): { title: string; text: string } {
   if (!p.guardian) return { title: 'My own assistant', text: 'You set the limits in your request. Anything unusual comes back to you for approval.' }
-  const who = p.name.match(/\(([^,)]+),\s*(\d+)\)/) // "Mom (Kamala, 74)" -> Kamala, 74
+  const who = p.name.match(/\(([^,)]+),\s*(\d+)\)/)
   const person = who ? `${who[1]}, ${who[2]}` : p.name
   const guardian = p.guardian.name.replace(/\s*\(.*\)$/, '')
   const r = p.guardian.rules
@@ -54,7 +54,7 @@ function StepCard({ n, title, active, done, locked, children, aside }: { n: numb
   )
 }
 
-// ---------- PayPal JS SDK ----------
+// PayPal JS SDK
 declare global {
   interface Window {
     paypal?: { Buttons: (opts: Record<string, unknown>) => { render: (el: HTMLElement) => Promise<void>; close?: () => void } }
@@ -147,7 +147,6 @@ export function ShopperFlow({ config, profiles, shopNames, onDecision }: { confi
     return `You are about to approve ${money(run.cart.total, mandate.currency)} to ${shop.name}${shop.trusted ? '' : ', a shop that is not verified'}, for ${items}. PayPal only holds the money until PaySentinel's checks pass.`
   }, [run, mandate, shopNames])
 
-  // Read aloud and render the PayPal button whenever a new cart is ready to pay.
   useEffect(() => {
     if (step !== 3 || !run) return
     if (autoSpeak) speak(summary)

@@ -1,17 +1,16 @@
-// Shop catalogs ("Shelf"): load, search, quote, import, and scan listings for hidden instructions.
+// Shop catalogs, search, Shelf import and the listing scanner.
 import fs from 'node:fs';
 import { dataFile } from './paths.js';
 
 const FILE = dataFile('shops.json');
 let shops = JSON.parse(fs.readFileSync(FILE, 'utf8'));
 
-/** Atomic write: a crash mid-write must not leave a half-written catalog behind. */
 const save = () => {
   fs.writeFileSync(`${FILE}.tmp`, JSON.stringify(shops, null, 2));
   fs.renameSync(`${FILE}.tmp`, FILE);
 };
 
-/** Shops added through the Shelf carry `shelf: true`; every other shop is part of the base catalog. */
+// base shops (no `shelf` flag) can't be overwritten by an import
 export const MAX_SHELF_SHOPS = 25;
 export const isProtectedShop = (id) => {
   const s = shops.find((x) => x.id === id);
@@ -28,7 +27,7 @@ export function nameMatches(name, keywords) {
   return keywords.every((k) => words.some((w) => w === stem(k) || (stem(k).length >= 4 && w.startsWith(stem(k)))));
 }
 
-/** Every word stem used in any product name (lets the offline parser ignore chatter like "urgent" or "bank"). */
+// word stems from product names, used by the offline parser
 export function vocabulary() {
   const v = new Set();
   for (const s of shops) for (const p of s.products) for (const w of p.name.toLowerCase().split(/[^a-z0-9]+/)) if (w.length >= 2) v.add(stem(w));
@@ -42,13 +41,12 @@ export function getProduct(shopId, sku) {
   return getShop(shopId)?.products.find((p) => p.sku === sku) ?? null;
 }
 
-/** The price the shop charges at checkout. Usually the listed price; a malicious shop may differ. */
+// checkout price (BargainBin overrides it)
 export function quote(shopId, sku) {
   const p = getProduct(shopId, sku);
   return p ? (p.checkout_price ?? p.price) : null;
 }
 
-/** Keyword search across the given shops, cheapest first. */
 export function search(query, shopIds) {
   const terms = String(query).toLowerCase().split(/\W+/).filter((t) => t.length > 1);
   const out = [];
@@ -63,7 +61,7 @@ export function search(query, shopIds) {
   return out.sort((a, b) => b.score - a.score || a.price - b.price);
 }
 
-// ---------- listing scanner ----------
+// listing scanner
 const PATTERNS = [
   { re: /<!--[\s\S]*?-->/, why: 'hidden HTML comment' },
   { re: /[​-‏⁠﻿]/, why: 'invisible characters' },
@@ -72,7 +70,7 @@ const PATTERNS = [
   { re: /\bdo not (mention|tell|inform)\b[^.]{0,40}\b(user|customer|buyer)\b/i, why: 'asks to hide something from the user' },
 ];
 
-/** Lines of raw seller text that look like instructions to AI agents (checked before any AI clean-up). */
+// flagged lines in the raw seller text
 export function scanRawText(raw) {
   return String(raw)
     .split(/\r?\n/)
@@ -82,10 +80,7 @@ export function scanRawText(raw) {
     .filter((r) => r.reasons.length);
 }
 
-/**
- * Shelf clean-up: remove hidden HTML comments, invisible characters and every sentence that reads as an
- * instruction to AI agents. What is removed is reported to the seller (see scanRawText).
- */
+// drop hidden comments, invisible chars and sentences aimed at AI agents
 export function stripInstructions(text) {
   const visible = String(text).replace(/<!--[\s\S]*?-->/g, ' ').replace(/[\u200B-\u200F\u2060\uFEFF]/g, '');
   return visible
@@ -96,7 +91,6 @@ export function stripInstructions(text) {
     .trim();
 }
 
-/** Returns why a listing looks like it contains instructions for AI agents, and which SKUs it pushes. */
 export function scanListing(shopId, product) {
   const text = `${product.name}\n${product.description ?? ''}`;
   const reasons = PATTERNS.filter((p) => p.re.test(text)).map((p) => p.why);
@@ -107,7 +101,7 @@ export function scanListing(shopId, product) {
   return { flagged: reasons.length > 0, reasons, pushedSkus };
 }
 
-/** SKU -> the listing that pushes it, for every flagged listing in a shop. */
+// sku -> listing that pushes it
 export function injectedSkus(shopId) {
   const map = new Map();
   for (const p of getShop(shopId)?.products ?? []) {
@@ -117,7 +111,6 @@ export function injectedSkus(shopId) {
   return map;
 }
 
-/** Shelf import: add or replace a shop from normalized products. */
 export function upsertShop({ id, name, trusted = false, products }) {
   if (isProtectedShop(id)) throw new Error(`Shop ${id} is part of the base catalog and cannot be replaced.`);
   const shop = { id, name, trusted, shelf: true, products };

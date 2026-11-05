@@ -1,5 +1,4 @@
-// Small shared building blocks. Animated pieces come from Magic UI (MIT, src/components/ui);
-// the spotlight background and buttons here are PaySentinel's own.
+// shared components (animated parts from Magic UI, MIT)
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { Check, CircleAlert, Loader2, X } from 'lucide-react'
 import { motion } from 'motion/react'
@@ -8,7 +7,6 @@ import { MagicCard } from '@/components/ui/magic-card'
 import { BorderBeam } from '@/components/ui/border-beam'
 import type { CheckStatus } from '@/api'
 
-/** A card with a soft cursor-following glow (Magic UI MagicCard). */
 export function Panel({ children, className, beam = false, glow = true }: { children: ReactNode; className?: string; beam?: boolean; glow?: boolean }) {
   const inner = <div className={cn('relative p-5 sm:p-6', className)}>{children}</div>
   return (
@@ -98,7 +96,6 @@ export function ErrorNote({ error }: { error?: string | null }) {
   )
 }
 
-/** Page background: a soft spotlight from the top plus a faint grid that fades out. */
 export function Backdrop() {
   return (
     <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">

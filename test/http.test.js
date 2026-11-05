@@ -1,4 +1,4 @@
-// End-to-end API tests against a real server process in mock mode (no PayPal or Gemini calls, temp data folder).
+// API tests against a server in mock mode with a temp data dir
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';

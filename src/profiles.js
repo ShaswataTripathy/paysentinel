@@ -1,4 +1,4 @@
-// Guardian mode: people whose AI assistant shops for them, and the family member who sets their rules.
+// Guardian mode profiles.
 import fs from 'node:fs';
 import { dataFile } from './paths.js';
 
@@ -14,12 +14,10 @@ export const CATEGORIES = ['groceries', 'pharmacy', 'household', 'electronics', 
 export const listProfiles = () => profiles;
 export const getProfile = (id) => profiles.find((p) => p.id === id) ?? null;
 
-/** Rejected input; the server returns it as a 400 with this message. */
 const invalid = (message) => Object.assign(new Error(message), { status: 400, expose: true });
 
-const MAX_LIMIT = 10_000; // USD; a guardian limit above this is almost certainly a typo
+const MAX_LIMIT = 10_000; // USD
 
-/** Validate and store a guardian's rules. Unknown fields are ignored; invalid values are rejected, never guessed. */
 export function updateRules(id, input) {
   const p = getProfile(id);
   if (!p?.guardian) throw invalid('This profile has no guardian.');

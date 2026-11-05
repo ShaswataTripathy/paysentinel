@@ -1,21 +1,14 @@
-// The Sentinel: fixed rules decide whether a held agent payment is captured, sent for approval, or voided.
-// No AI in here on purpose: model output is untrusted, so the money decision must be deterministic.
+// Rule engine: capture, review or void a held payment. No AI here on purpose.
 import { getShop, getProduct, injectedSkus, nameMatches } from './catalog.js';
 
 const cents = (n) => Math.round(Number(n) * 100);
 const fmt = (n, cur = 'USD') => `${cur} ${(Number(n)).toFixed(2)}`;
 
-/** Does a product name satisfy the mandate's keywords? */
 export function matchesIntent(name, mandate) {
   return nameMatches(name, mandate.must_match);
 }
 
-/**
- * @param mandate  { must_match[], quantity, max_unit_price, max_total, currency, allowed_shops[] }
- * @param order    { shop, currency, total, items: [{ sku, name, quantity, unit_price }] }  (as PayPal holds it)
- * @param guardian optional Guardian mode context (see guardianChecks)
- * @returns { decision: 'capture'|'review'|'void', checks: [{ id, label, status: 'pass'|'review'|'block', detail }] }
- */
+// order is PayPal's view of the held order
 export function verify(mandate, order, guardian = null) {
   const checks = [];
   const add = (id, label, status, detail) => checks.push({ id, label, status, detail });
@@ -29,7 +22,7 @@ export function verify(mandate, order, guardian = null) {
   else if (!shop.trusted) add('shop', 'Shop is trusted', 'review', `${shop.name} is not a verified shop.`);
   else add('shop', 'Shop is trusted', 'pass', `${shop.name} is a verified shop.`);
 
-  // 2. Every item exists in the shop's public catalog, with a sane quantity and price
+  // 2. Catalog
   const items = Array.isArray(order.items) ? order.items : [];
   const malformed = items.filter((it) => !Number.isInteger(Number(it.quantity)) || Number(it.quantity) < 1 || !(Number(it.unit_price) > 0));
   const unknown = items.filter((it) => !getProduct(order.shop, it.sku));
@@ -38,12 +31,12 @@ export function verify(mandate, order, guardian = null) {
   else add('catalog', 'Items exist in the catalog', unknown.length ? 'block' : 'pass',
     unknown.length ? `Not in the shop's catalog: ${unknown.map((i) => i.name).join(', ')}.` : 'Every item is a real catalog listing.');
 
-  // 3. Every item is something you asked for
+  // 3. Intent
   const extra = order.items.filter((it) => !matchesIntent(it.name, mandate));
   add('intent', 'Only items you asked for', extra.length ? 'block' : 'pass',
     extra.length ? `You did not ask for: ${extra.map((i) => i.name).join(', ')}.` : 'Every item matches your request.');
 
-  // 4. Hidden instructions in listings pushed an item into the cart
+  // 4. Injected items
   const injected = injectedSkus(order.shop);
   const pushed = order.items.filter((it) => injected.has(it.sku));
   if (pushed.length) {
@@ -52,7 +45,7 @@ export function verify(mandate, order, guardian = null) {
       `${pushed.map((i) => i.name).join(', ')} was demanded by hidden text in listing ${src.from} (${src.reasons.join(', ')}), not by you.`);
   } else add('injection', 'No items planted by listing text', 'pass', 'No cart item traces back to hidden listing text.');
 
-  // 5. Prices charged equal the prices listed (catches price drift at checkout)
+  // 5. Price drift
   const drift = order.items
     .map((it) => ({ it, listed: getProduct(order.shop, it.sku)?.price }))
     .filter(({ it, listed }) => listed != null && cents(it.unit_price) !== cents(listed));
@@ -67,7 +60,7 @@ export function verify(mandate, order, guardian = null) {
   else if (qty < mandate.quantity) add('quantity', 'Quantity as requested', 'review', `Asked for ${mandate.quantity}, cart has ${qty}.`);
   else add('quantity', 'Quantity as requested', 'pass', `${qty} as requested.`);
 
-  // 7. Budget: up to 10% over (per item or in total) goes to you for approval; more is blocked
+  // 7. Budget (<=10% over -> review)
   const total = cents(order.total);
   const limitsOk = cents(mandate.max_total) > 0 && cents(mandate.max_unit_price) > 0;
   const ratio = !limitsOk || !Number.isFinite(total) ? Infinity : Math.max(
@@ -79,7 +72,7 @@ export function verify(mandate, order, guardian = null) {
   else if (ratio > 1) add('budget', 'Within your budget', 'review', `${vs}: slightly over.`);
   else add('budget', 'Within your budget', 'pass', `${vs}.`);
 
-  // 8. The amount PayPal is holding equals the sum of the items, in the mandate's currency (catches a tampered total)
+  // 8. Held total and currency
   const sum = order.items.reduce((s, it) => s + cents(it.unit_price) * Number(it.quantity), 0);
   if (order.currency && order.currency !== mandate.currency)
     add('total', 'Held amount = item total', 'block', `PayPal holds ${order.currency} but your limit is in ${mandate.currency}.`);
@@ -92,11 +85,7 @@ export function verify(mandate, order, guardian = null) {
   return { decision, checks };
 }
 
-/**
- * Guardian mode: rules a family member set for someone else's AI assistant. They apply on top of the request,
- * so a scam that talks the person into asking for something risky is still stopped.
- * guardian = { name, rules: { allowed_categories, blocked_categories, per_order_limit, weekly_limit, verified_shops_only }, spentThisWeek }
- */
+// guardian = { name, rules, spentThisWeek }
 function guardianChecks(guardian, order, shop, add, cur) {
   const r = guardian.rules;
   const who = guardian.name;

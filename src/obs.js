@@ -1,18 +1,16 @@
-// Observability: one JSON log line per event (easy to search in Render's log view), request ids,
-// and in-process counters exposed at /api/metrics. No secrets or card data are ever logged.
+// JSON logs, request ids, and counters for /api/metrics. Don't log secrets or card data.
 import { randomUUID } from 'node:crypto';
 
 const QUIET = process.env.NODE_ENV === 'test' || process.env.LOG_LEVEL === 'silent';
 const startedAt = Date.now();
 
-/** log('info', 'payment.captured', { orderId }) -> {"ts":..,"level":"info","event":"payment.captured","orderId":..} */
 export function log(level, event, fields = {}) {
   if (QUIET && level !== 'error') return;
   const line = JSON.stringify({ ts: new Date().toISOString(), level, event, ...fields });
   (level === 'error' || level === 'warn' ? console.error : console.log)(line);
 }
 
-// ---------------- metrics ----------------
+// metrics
 const counters = new Map(); // "name{label=value}" -> count
 const timings = new Map(); // name -> { count, totalMs, maxMs }
 
@@ -34,7 +32,6 @@ export function timing(name, ms) {
   timings.set(name, t);
 }
 
-/** Time an async call: records latency and an ok/error counter, rethrows errors. */
 export async function timed(name, labels, fn) {
   const t0 = performance.now();
   try {
@@ -60,8 +57,7 @@ export function metrics() {
   };
 }
 
-// ---------------- request logging ----------------
-/** Adds req.id (also returned as X-Request-Id) and logs every API request with status and latency. */
+// request logging
 export function requestLogger(req, res, next) {
   req.id = randomUUID();
   res.setHeader('X-Request-Id', req.id);
@@ -69,7 +65,7 @@ export function requestLogger(req, res, next) {
   const t0 = performance.now();
   res.on('finish', () => {
     const ms = Math.round(performance.now() - t0);
-    // Route pattern, not the raw URL, so ids don't explode the metric labels.
+    // use the route pattern so ids don't end up in labels
     const route = req.route?.path ? `${req.baseUrl}${req.route.path}` : 'unmatched';
     count('http_requests_total', { route: `${req.method} ${route}`, status: res.statusCode });
     timing(`http ${req.method} ${route}`, ms);

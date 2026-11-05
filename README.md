@@ -135,30 +135,31 @@ Google Gemini (free tier; agent on `gemini-3.5-flash`, short tasks on `gemini-3.
 
 Model output is always validated, and the payment decision itself is deterministic (`src/sentinel.js`). If Gemini is unreachable, the mandate falls back to an offline parser and the agent to the scripted one, so the demo never stalls.
 
-## Security, guardrails and observability
+## Security
 
-**AI guardrails**
-- *The model never decides about money.* The Sentinel (`src/sentinel.js`) is plain code and fails closed: empty orders, zero or negative quantities and prices, a currency other than the mandate's, or missing limits are all blocked. If the checks themselves throw, the held money is voided.
-- *Untrusted text is fenced.* User requests, seller listings, product names and buyer dispute messages go into prompts between `<<<` and `>>>` markers, with an instruction to treat them as data.
-- *Model output is validated.* Mandates are schema-checked: keywords sanitized, quantity ≤ 100, limits ≤ $10,000, unknown shop ids dropped, USD only. Explanations and dispute drafts are rejected if they contain links, e-mail addresses or markup, or if they contradict the decision (a capture called "blocked", a void called "charged"). A dispute draft must also quote the receipt hash and must not offer a refund. A rejected output falls back to a template built only from verified facts.
-- *Indirect prompt injection.* Listing text aimed at AI agents (hidden HTML comments, invisible characters, "AI assistants must…", "do not tell the user") is detected, used by the Sentinel to block planted items, and stripped from Shelf imports and reported to the seller.
-- *Agent limits.* At most 10 turns and 8 tool calls per turn, 20 cart lines and 100 units per line. Prices always come from the shop's checkout, never from the agent.
+AI side
+- Gemini never decides about money. `sentinel.js` is plain code and blocks empty orders, bad quantities or prices, a different currency, or missing limits. If the checks throw, the hold is voided.
+- User requests, listings and buyer dispute messages go into prompts between `<<<` `>>>` and are treated as data.
+- Mandates from Gemini are validated (quantity max 100, limits max $10,000, USD only, unknown shops dropped).
+- Explanations and dispute drafts with links, emails or HTML are replaced by a template. Same if an explanation contradicts the decision, or a dispute draft doesn't quote the receipt hash or mentions a refund.
+- Listing text aimed at AI agents (hidden comments, invisible characters, "AI assistants must...") is flagged, used to block planted items, and removed from Shelf imports.
+- The Gemini agent gets at most 10 turns and 8 tool calls per turn. Carts are capped at 20 lines and 100 units per line, and prices always come from the shop.
 
-**API**
-- Every input is validated and length-capped; ids must match `[A-Za-z0-9-]{1,64}`; errors are JSON, and internal errors return a generic message with a request id.
-- Helmet security headers with a strict Content-Security-Policy (only PayPal and Google Fonts allowed); `frame-ancestors 'none'`.
-- CSRF: state-changing requests must be `application/json`, which a cross-site form cannot send.
-- Rate limits per IP: 240 API calls a minute, 12 for AI-backed calls, 30 for payment calls.
-- Money safety: one PayPal order per agent run, a lock against double authorize/approve/submit, idempotency keys on capture and void (a retry can never charge twice), 30 s timeouts on PayPal calls.
-- The Shelf cannot replace a base-catalog shop (the Sentinel checks prices against it), and imported shops are never verified.
-- Expiring, size-capped in-memory state; atomic file writes; a corrupt decision log is set aside instead of crashing the server; receipts refuse to use the development key in production.
+API
+- Input validation and length limits on every route, JSON errors with a request id.
+- Helmet headers and a CSP that only allows PayPal and Google Fonts.
+- Writes must be `application/json` (CSRF).
+- Rate limits per IP: 240/min overall, 12/min for AI calls, 30/min for payment calls.
+- One PayPal order per agent run, locks against double authorize/approve, fixed `PayPal-Request-Id` on capture and void, 30 s timeouts.
+- Shelf imports can't replace a base shop and are never verified.
+- In-memory state expires, files are written atomically, and the server won't start in production without `RECEIPT_SECRET`.
 
-**Observability**
-- One JSON log line per event (`http.request`, `mandate.created`, `agent.run`, `order.created`, `payment.decided`, `payment.resolved`, `dispute.*`, `ai.fallback`, `ai.output_rejected`, `paypal.error` with PayPal's debug id), each with a request id that is also returned in the `X-Request-Id` header. No card data, secrets or tokens are logged.
-- `GET /api/metrics`: request counts and latency per route, Gemini and PayPal call counts and latency per model or operation, decisions by outcome, failed checks by type, AI fallbacks and rejected outputs, rate-limit hits. Set `METRICS_TOKEN` to protect it.
-- `GET /api/health` for the Render health check.
+Logs and metrics
+- JSON log lines (`payment.decided`, `agent.run`, `ai.fallback`, `paypal.error` with PayPal's debug id, ...) with a request id, also sent back as `X-Request-Id`.
+- `GET /api/metrics`: requests, latency, Gemini and PayPal calls, decisions, failed checks, fallbacks, rate limits. Set `METRICS_TOKEN` to protect it.
+- `GET /api/health` for Render.
 
-**Known limits of the demo.** There are no user accounts: anyone with the URL can act as the shopper or the guardian, and the MCP `shopping_for` field picks the profile. A real deployment would put the guardian and shopper pages behind sign-in (for example Log in with PayPal) and bind each mandate to the signed-in user. State lives in memory and JSON files, which suits a single instance; scaling out would need a database.
+Not covered: there are no user accounts, so anyone with the URL can act as shopper or guardian. A real deployment would add sign-in (e.g. Log in with PayPal) and tie mandates to the user. State is in memory and JSON files, fine for one instance.
 
 ## Run it
 

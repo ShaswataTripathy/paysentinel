@@ -33,7 +33,7 @@ function CopyBlock({ text }: { text: string }) {
 export function AgentsView({ decisions, reload }: { decisions: Decision[]; reload: () => void }) {
   useEffect(() => {
     reload()
-    const t = setInterval(reload, 4000) // live feed while the tab is open
+    const t = setInterval(reload, 4000)
     return () => clearInterval(t)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const origin = typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : 'http://localhost:3000'

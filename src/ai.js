@@ -1,13 +1,8 @@
-// Gemini (free tier) via REST. Every model output is validated; nothing here decides about money.
+// Gemini REST calls. Output is validated, money decisions are made in sentinel.js.
 const KEY = process.env.GEMINI_API_KEY;
-// Free-tier models get overloaded (503) and have small per-minute quotas (429), so:
-//  - the shopping agent (many calls in a row) gets the main model's quota to itself,
-//  - short one-shot jobs (mandate, explanations, drafts) use a lighter model with its own quota,
-//  - every list falls back to the next model, and a rate-limited call waits briefly and retries.
+// free tier: agent on the main model, small tasks on the lite model, fall back down each list on 429/503
 const MAIN = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
 const LIGHT = process.env.GEMINI_LIGHT_MODEL || 'gemini-3.1-flash-lite';
-// Free-tier quotas are per model (some only ~20 requests a day), so spreading work over several models
-// multiplies what the demo can do in a day.
 const AGENT_MODELS = [...new Set([MAIN, 'gemini-3-flash-preview', 'gemini-3.7-flash', 'gemini-3.8-flash', 'gemini-flash-latest', LIGHT, 'gemini-flash-lite-latest'])];
 const TASK_MODELS = [...new Set([LIGHT, 'gemini-flash-lite-latest', 'gemini-3.5-flash-lite', MAIN])];
 const TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 25_000;
@@ -19,7 +14,7 @@ import { log, count, timed } from './obs.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Models that recently failed with a quota or overload error, and when to try them again.
+// model -> retry time
 const cooldown = new Map();
 const usable = (list) => list.filter((m) => (cooldown.get(m) ?? 0) <= Date.now());
 const coolDown = (model, err) => cooldown.set(model, Date.now() + (err.status === 429 ? Math.min(err.retryAfterMs ?? 60_000, 3_600_000) : 60_000));
@@ -29,8 +24,8 @@ const callModel = (model, body) => timed('gemini_call', { model }, () => callMod
 async function callModelRaw(model, body) {
   const gc = { ...body.generationConfig };
   if (/gemini-3/.test(model)) {
-    gc.thinkingConfig ??= { thinkingLevel: 'low' }; // keep the demo snappy
-    delete gc.temperature; // Gemini 3 is tuned for its default temperature
+    gc.thinkingConfig ??= { thinkingLevel: 'low' };
+    delete gc.temperature;
   }
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
@@ -56,12 +51,7 @@ async function callModelRaw(model, body) {
 
 const isRetryable = (e) => e.retryable || e.name === 'TimeoutError';
 
-/**
- * One generateContent call. Returns { content, model }.
- * Without `model`: tries each usable model in `models` until one answers.
- * With `model`: stays on that model (a function-calling conversation must not switch models midway);
- * a short per-minute rate limit is waited out, anything longer is thrown so the caller can restart elsewhere.
- */
+// With `model` it sticks to that model and waits out short rate limits, otherwise tries `models` in order.
 export async function geminiCall(body, { model, models = AGENT_MODELS } = {}) {
   if (model) {
     let waited = 0;
@@ -92,7 +82,6 @@ export async function geminiCall(body, { model, models = AGENT_MODELS } = {}) {
   throw last;
 }
 
-/** Models the agent can still use right now, best first. */
 export const agentModels = () => usable(AGENT_MODELS);
 
 export async function gemini(body) {
@@ -114,10 +103,10 @@ async function geminiJSON(prompt, responseSchema) {
 
 import { stem, vocabulary, listShops, scanRawText, stripInstructions } from './catalog.js';
 
-// ---------------- guardrails for text going into and coming out of the model ----------------
-/** Untrusted text is placed between <<< >>> markers; remove anything that could close the block early. */
+// guardrails for text going into and coming out of the model
+// untrusted text goes between <<< >>>
 const fence = (text, max) => String(text ?? '').replace(/<<<|>>>|"{3}/g, ' ').slice(0, max);
-/** Model output shown to people must be plain prose: no links, contact details or markup an injection could plant. */
+// reject links, emails, html, markdown in model output
 const UNSAFE_OUTPUT = /(https?:\/\/|www\.|\b[\w.+-]+@[\w-]+\.[\w.]+|<\/?[a-z][^>]*>|\]\(|```)/i;
 function guardOutput(kind, text, fallback, extraCheck = () => true) {
   const t = String(text ?? '').trim();
@@ -130,7 +119,7 @@ function guardOutput(kind, text, fallback, extraCheck = () => true) {
   return t;
 }
 
-// ---------------- mandate ----------------
+// mandate
 const MAX_PRICE = 10_000; // USD
 
 export function validateMandate(m, text) {
@@ -139,7 +128,7 @@ export function validateMandate(m, text) {
   const quantity = Math.min(100, Math.max(1, Math.round(num(m.quantity, 1))));
   const keywords = Array.isArray(m.must_match) ? m.must_match : [];
   const must_match = [...new Set(keywords.map((k) => stem(String(k).trim().toLowerCase())).filter((k) => /^[a-z0-9]{2,30}$/.test(k)))].slice(0, 4);
-  const cap = (v) => (v != null && v > MAX_PRICE ? null : v); // absurd limits are treated as missing, never trusted
+  const cap = (v) => (v != null && v > MAX_PRICE ? null : v);
   const max_unit_price = cap(num(m.max_unit_price, null));
   const max_total = cap(num(m.max_total, max_unit_price ? max_unit_price * quantity : null));
   const currency = typeof m.currency === 'string' && m.currency.trim() ? m.currency.trim().toUpperCase() : 'USD';
@@ -156,13 +145,11 @@ export function validateMandate(m, text) {
     max_unit_price: max_unit_price ?? max_total,
     max_total,
     currency: 'USD',
-    // Only real shop ids: an unknown id from the model would silently block every shop.
     allowed_shops: Array.isArray(m.allowed_shops) ? [...new Set(m.allowed_shops.map(String))].filter((id) => known.has(id)) : [],
     missing,
   };
 }
 
-/** Plain English -> strict mandate the Sentinel enforces. */
 export async function extractMandate(text) {
   if (aiMock) return validateMandate(heuristicMandate(text), text);
   let m;
@@ -216,7 +203,7 @@ function heuristicMandate(text) {
   return { summary: text, must_match, quantity, max_unit_price: price, max_total: price * quantity, currency: 'USD', allowed_shops: [] };
 }
 
-// ---------------- explanation ----------------
+// explanation
 export async function explainDecision(mandate, order, result) {
   const failed = result.checks.filter((c) => c.status !== 'pass');
   const SHORT = {
@@ -249,19 +236,18 @@ Decision: ${result.decision} (capture = the payment has ALREADY been charged; re
 Findings: <<<${fence(JSON.stringify((failed.length ? failed : result.checks.slice(0, 3)).map(({ id, status, detail }) => ({ id, status, detail }))), 3000)}>>>`,
       { type: 'OBJECT', properties: { text: { type: 'STRING' } }, required: ['text'] },
     );
-    // A capture must not be described as blocked, and a block must not be described as charged.
     const consistent = (t) =>
       result.decision === 'capture' ? !/\b(blocked|voided|released|not charged)\b/i.test(t) : !/\b(was|been|is) (charged|captured)\b|\bsuccessfully (paid|charged)\b/i.test(t);
     return guardOutput('explanation', String(r?.text ?? '').slice(0, 400), fallback, consistent);
   } catch (e) {
     count('ai_fallback_total', { task: 'explanation' });
     log('warn', 'ai.fallback', { task: 'explanation', error: e.message.slice(0, 160) });
-    return fallback; // explanation is cosmetic; never fail the payment flow over it
+    return fallback;
   }
 }
 
-// ---------------- dispute response ----------------
-/** Draft the seller's response to a dispute from the signed evidence pack. The seller reviews it before sending. */
+// dispute response
+// seller edits the draft before it is sent
 export async function draftDisputeResponse(dispute, pack) {
   const passed = pack.checks.filter((c) => c.status === 'pass').length;
   const fallback = [
@@ -290,7 +276,7 @@ Evidence pack: ${JSON.stringify({
   receipt_sha256_prefix: pack.receipt?.sha256?.slice(0, 16), paypal: pack.paypal, order: pack.order, checks: pack.checks, mandate: pack.mandate, decided_at: pack.decided_at })}`,
       { type: 'OBJECT', properties: { text: { type: 'STRING' } }, required: ['text'] },
     );
-    // The draft must carry the verifiable facts; otherwise use the template built only from the signed pack.
+    // must quote the receipt hash, else use the template
     const prefix = pack.receipt?.sha256?.slice(0, 8);
     const grounded = (t) => (!prefix || t.includes(prefix)) && !/\brefund\b/i.test(t);
     return guardOutput('dispute_draft', String(r?.text ?? '').slice(0, 2000), fallback, grounded);
@@ -301,8 +287,7 @@ Evidence pack: ${JSON.stringify({
   }
 }
 
-// ---------------- Shelf import ----------------
-/** Messy product rows (CSV text or notes) -> clean catalog products. */
+// Shelf import
 export async function normalizeProducts(raw, shopId) {
   let rows;
   try {
@@ -320,7 +305,6 @@ export async function normalizeProducts(raw, shopId) {
       name: stripInstructions(String(r.name).replace(/\s+/g, ' ').trim()).slice(0, 120) || `Product ${i + 1}`,
       price: Math.round(Number(r.price) * 100) / 100,
       stock: Math.min(100_000, Math.max(0, Math.round(Number(r.stock) || 10))),
-      // Sentences addressed to AI agents are removed here and reported back to the seller by the server.
       description: stripInstructions(String(r.description ?? '')).slice(0, 1000),
     }));
 }

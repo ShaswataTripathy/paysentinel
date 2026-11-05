@@ -1,4 +1,3 @@
-// Guardrails added in the production audit: Sentinel fail-closed cases, mandate validation, Shelf clean-up.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { verify } from '../src/sentinel.js';

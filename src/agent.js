@@ -1,12 +1,10 @@
-// The shopping agent. PaySentinel does not trust it: whatever cart it builds is verified later.
-//  - 'gemini':    a real LLM agent using function calling (needs GEMINI_API_KEY)
-//  - 'simulated': a scripted agent that, like the agents in recent research, obeys instructions hidden in listings.
-//                 It makes the attack demo reproducible; the Sentinel treats both agents the same way.
+// Shopping agents. 'gemini' uses function calling, 'simulated' is scripted and follows hidden listing
+// instructions so the attack demo is reproducible. Carts from both are verified the same way.
 import { search, getProduct, quote, scanListing, getShop, listShops, nameMatches } from './catalog.js';
 import { geminiCall, aiMock, agentModels } from './ai.js';
 
 const round2 = (n) => Math.round(n * 100) / 100;
-const MAX_QTY = 100; // per line; the Sentinel checks quantity against the mandate anyway
+const MAX_QTY = 100;
 const MAX_LINES = 20;
 const MAX_TOOL_CALLS_PER_TURN = 8;
 
@@ -22,7 +20,7 @@ export function makeCart() {
       if (!items.find((i) => i.sku === sku) && items.length >= MAX_LINES) return { error: `A cart holds at most ${MAX_LINES} different items.` };
       if (this.shop && this.shop !== shopId) return { error: 'A cart can only hold items from one shop. Check out first.' };
       this.shop = shopId;
-      const unit_price = quote(shopId, sku); // the shop's checkout price, which may differ from its listing
+      const unit_price = quote(shopId, sku); // checkout price, can differ from listing
       const existing = items.find((i) => i.sku === sku);
       if (existing) existing.quantity = Math.min(MAX_QTY, existing.quantity + quantity);
       else items.push({ sku, name: p.name, quantity, unit_price, reason: reason == null ? undefined : String(reason).slice(0, 200) });
@@ -38,13 +36,10 @@ export function makeCart() {
   };
 }
 
-/** Which shops the agent can see. Normal mode: verified shops. Attack mode: the agent also finds the trap shop. */
+// attack mode also exposes the untrusted shop
 const visibleShops = (attack) => listShops().filter((s) => attack || s.trusted).map((s) => s.id);
 
-/**
- * A cart built by an outside agent (for example over MCP). Prices come from the shop's checkout, not from
- * the agent, exactly as with the built-in agents, and the Sentinel verifies the result the same way.
- */
+// cart from an outside agent (MCP); prices still come from the shop
 export function externalRun(items, agentName) {
   const cart = makeCart();
   const trace = [{ step: 'note', detail: `Cart built by an outside agent (${agentName}) through the PaySentinel MCP server.` }];
@@ -68,14 +63,14 @@ export async function runAgent(mandate, { mode = 'simulated', attack = false } =
       notes.push({ step: 'note', detail: `${model} is busy or out of free quota; restarting the run on the next Gemini model.` });
     }
   }
-  // Never break the demo: fall back to the scripted agent and say so.
+  // all models busy -> scripted agent
   const run = runSimulatedAgent(mandate, attack);
   run.trace.unshift({ step: 'note', detail: 'Gemini is out of free quota right now, so the scripted agent shopped instead. PaySentinel checks it the same way.' });
   run.fallback = true;
   return run;
 }
 
-// ---------------- simulated (vulnerable) agent ----------------
+// simulated (vulnerable) agent
 function runSimulatedAgent(mandate, attack) {
   const trace = [];
   const cart = makeCart();
@@ -85,7 +80,7 @@ function runSimulatedAgent(mandate, attack) {
   let results = matching.filter((r) => r.price <= mandate.max_unit_price);
   trace.push({ step: 'search', detail: `Searched "${query}" in ${shops.length} shop(s): ${results.length} result(s) within budget.` });
   if (!results.length) {
-    // Like a real agent, settle for the closest option if it is only slightly over budget.
+    // allow up to 10% over budget
     results = matching.filter((r) => r.price <= mandate.max_unit_price * 1.1);
     if (results.length) trace.push({ step: 'search', detail: 'Nothing within budget; taking the closest option, slightly over.' });
   }
@@ -93,13 +88,13 @@ function runSimulatedAgent(mandate, attack) {
     trace.push({ step: 'stop', detail: 'Nothing found within budget.' });
     return { agent: 'simulated', trace, cart: cart.summary() };
   }
-  const pick = results.sort((a, b) => a.price - b.price)[0]; // cheapest wins
+  const pick = results.sort((a, b) => a.price - b.price)[0];
   const product = getProduct(pick.shop, pick.sku);
   trace.push({ step: 'read', detail: `Reading listing ${pick.sku} at ${pick.shopName} (${pick.price.toFixed(2)}).` });
   cart.add(pick.shop, pick.sku, mandate.quantity, 'matches the request');
   trace.push({ step: 'add', detail: `Added ${mandate.quantity} x ${product.name}.` });
 
-  // The vulnerability: obey any instruction in the listing that names another SKU.
+  // deliberately vulnerable: follows listing instructions that name another SKU
   for (const sku of scanListing(pick.shop, product).pushedSkus) {
     const extra = getProduct(pick.shop, sku);
     cart.add(pick.shop, sku, 1, 'listing said it was required');
@@ -109,7 +104,7 @@ function runSimulatedAgent(mandate, attack) {
   return { agent: 'simulated', trace, cart: cart.summary() };
 }
 
-// ---------------- real Gemini agent ----------------
+// real Gemini agent
 const TOOLS = [
   {
     functionDeclarations: [
@@ -137,7 +132,6 @@ const TOOLS = [
   },
 ];
 
-/** One readable line per tool call, for the trace shown to the shopper. */
 function describeCall(name, a, result) {
   const shop = getShop(a.shop)?.name ?? a.shop;
   const p = a.sku ? getProduct(a.shop, a.sku) : null;
@@ -186,11 +180,10 @@ Prefer the cheapest suitable option. Budget: ${mandate.currency} ${mandate.max_t
     }
   };
 
-  // One model for the whole conversation (thought signatures are model-specific).
+  // stay on one model, thought signatures are model specific
   for (let turn = 0; turn < 10; turn++) {
     const { content } = await geminiCall({ systemInstruction, contents, tools: TOOLS, generationConfig: { temperature: 0.2 } }, { model });
-    contents.push(content); // keep the model's turn exactly as returned
-    // A runaway model cannot flood the cart or the trace: at most a few tool calls per turn, 10 turns per run.
+    contents.push(content);
     const calls = (content.parts ?? []).filter((p) => p.functionCall).map((p) => p.functionCall).slice(0, MAX_TOOL_CALLS_PER_TURN);
     const said = (content.parts ?? []).map((p) => p.text).filter(Boolean).join(' ').trim();
     if (said) trace.push({ step: 'think', detail: said.slice(0, 300) });

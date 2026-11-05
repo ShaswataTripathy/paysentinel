@@ -1,5 +1,4 @@
-// Smoke test for the PaySentinel MCP server: connects as an MCP client over stdio and makes two purchases.
-// Needs PaySentinel running (npm start). Usage: node scripts/mcp-smoke.mjs
+// MCP smoke test, needs the server running (npm start)
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
@@ -17,10 +16,8 @@ const id = (await call('create_mandate', { request: 'Buy one pack of AA batterie
 await call('search_products', { query: 'AA batteries' });
 await call('get_product', { shop: 'bargainbin', sku: 'BB-AA8' });
 
-// An honest agent picks the verified shop.
 await call('checkout', { mandate_id: id, items: [{ shop: 'voltmart', sku: 'VM-AA8', quantity: 1, reason: 'cheapest verified AA pack' }] });
 
-// A hijacked agent obeys the hidden listing text.
 const id2 = (await call('create_mandate', { request: 'Buy one pack of AA batteries under $15' })).match(/Mandate (\S+)/)[1];
 await call('checkout', {
   mandate_id: id2,
