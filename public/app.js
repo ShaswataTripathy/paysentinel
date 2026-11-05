@@ -405,11 +405,11 @@ async function showEvidence(id) {
         ? `<div class="dispute">
             ${
               dis
-                ? `<div><strong>Dispute ${esc(dis.dispute_id)}</strong> · ${esc(dis.reason)} · <span class="pill review">${esc(dis.status)}</span></div>
+                ? `<div><strong>Dispute ${esc(dis.dispute_id)}</strong> · ${esc(dis.reason)}${dis.stage ? ` · ${esc(dis.stage.toLowerCase())}` : ''} · <span class="pill review">${esc(dis.status)}</span></div>
                    ${dis.buyer_message ? `<div class="muted">Buyer: "${esc(dis.buyer_message)}"</div>` : ''}
                    ${
                      dis.response
-                       ? `<p><strong>Response sent</strong> with the signed evidence pack attached:</p><p class="muted">${esc(dis.response)}</p>`
+                       ? `<p><strong>Response sent to PayPal</strong>${dis.channel === 'send-message' ? ' in the case thread (inquiry stage)' : dis.channel === 'provide-evidence' ? ` as formal evidence${dis.evidence_type ? ` (${esc(dis.evidence_type.toLowerCase().replaceAll('_', ' '))})` : ''}` : ''}, with the signed evidence pack attached:</p><p class="muted">${esc(dis.response)}</p>`
                        : `<label>Response to PayPal <textarea id="dispute-notes" rows="6" placeholder="Draft with AI, then edit before sending"></textarea></label>
                           <div class="row"><button class="ghost" id="btn-draft">Draft response with AI</button><button id="btn-submit-evidence">Send response + evidence to PayPal</button><span class="muted" id="dispute-status" role="status"></span></div>`
                    }`

@@ -64,7 +64,9 @@ AI-agent purchases leave no device or IP trail, so "my assistant bought this wit
 When a buyer disputes a captured payment:
 1. **Find the dispute** (`GET /v1/customer/disputes?disputed_transaction_id=…`), or simulate one in mock mode.
 2. **AI drafts the response** from the evidence pack only, with no invented facts.
-3. The seller edits it and **sends it to PayPal** (`POST /v1/customer/disputes/{id}/provide-evidence`) with the evidence pack attached.
+3. The seller edits it and **sends it to PayPal** with the evidence pack attached. PaySentinel reads which evidence PayPal is requesting from the seller (for example `PROOF_OF_FULFILLMENT`) and submits that type with `provide-evidence`; if the case is at a stage where PayPal no longer takes evidence, it answers in the case thread with `send-message` instead.
+
+Tested end to end in the PayPal sandbox: a buyer's case was found by capture ID, Gemini drafted the reply from the signed pack, and PayPal accepted it.
 
 PayPal's Agent Toolkit can list, read and accept disputes but has no tool to submit evidence; this fills that gap.
 
@@ -86,7 +88,7 @@ Sellers paste a product list in any format; AI turns it into a clean, agent-read
 | Charge | `POST /v2/payments/authorizations/{id}/capture` |
 | Release | `POST /v2/payments/authorizations/{id}/void` |
 | Find a dispute | `GET /v1/customer/disputes?disputed_transaction_id={capture}` |
-| Answer it | `POST /v1/customer/disputes/{id}/provide-evidence` (multipart, evidence pack attached) |
+| Answer it | `POST /v1/customer/disputes/{id}/provide-evidence` (multipart, requested evidence type, evidence pack attached), or `.../send-message` at the inquiry stage |
 
 ## AI usage
 

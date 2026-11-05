@@ -246,7 +246,7 @@ app.post(
     const notes = String(req.body?.notes ?? '').trim();
     if (need(notes, res, 'Write or draft a response first.')) return;
     const r = await provideEvidence(d.dispute.dispute_id, notes, evidencePack(d));
-    d.dispute = { ...d.dispute, status: r.status, response: notes, responded_at: new Date().toISOString() };
+    d.dispute = { ...d.dispute, status: r.status, channel: r.channel ?? null, evidence_type: r.evidenceType ?? null, response: notes, responded_at: new Date().toISOString() };
     saveLog();
     res.json(d.dispute);
   }),

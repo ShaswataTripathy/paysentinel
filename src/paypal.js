@@ -176,6 +176,7 @@ export async function findDisputeForCapture(captureId) {
     dispute_id: full.dispute_id,
     reason: full.reason,
     status: full.status,
+    stage: full.dispute_life_cycle_stage ?? null,
     buyer_message: full.messages?.find((m) => m.posted_by === 'BUYER')?.content ?? null,
     disputed_amount: full.dispute_amount,
     capture_id: captureId,
@@ -190,17 +191,39 @@ export async function provideEvidence(disputeId, notes, pack) {
     d.status = 'UNDER_REVIEW';
     return { status: d.status };
   }
-  const form = new FormData();
-  form.append('input', new Blob([JSON.stringify({ evidences: [{ evidence_type: 'OTHER', notes: notes.slice(0, 2000) }] })], { type: 'application/json' }));
-  form.append('evidence-file', new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' }), `paysentinel-evidence-${disputeId}.json`);
-  const res = await fetch(`${BASE}/v1/customer/disputes/${encodeURIComponent(disputeId)}/provide-evidence`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${await getToken()}` }, // fetch sets the multipart boundary itself
-    body: form,
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`PayPal provide-evidence failed (${res.status}): ${text.slice(0, 300)}`);
-  return { status: 'UNDER_REVIEW' };
+  const file = () => new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' });
+  const fileName = `paysentinel-evidence-${disputeId}.json`;
+  const post = async (action, form) => {
+    const res = await fetch(`${BASE}/v1/customer/disputes/${encodeURIComponent(disputeId)}/${action}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await getToken()}` }, // fetch sets the multipart boundary itself
+      body: form,
+    });
+    return { ok: res.ok, status: res.status, text: await res.text() };
+  };
+
+  // 1. Formal evidence, using the evidence type PayPal is asking this seller for (PayPal rejects other types
+  //    with EVIDENCE_TYPE_IS_NOT_ALLOWED, e.g. it wants PROOF_OF_FULFILLMENT for "not received").
+  const dispute = await pp('GET', `/v1/customer/disputes/${encodeURIComponent(disputeId)}`);
+  const requested = (dispute.evidences ?? []).find((e) => e.source === 'REQUESTED_FROM_SELLER')?.evidence_type;
+  const evidenceType = requested ?? 'OTHER';
+  const ev = new FormData();
+  ev.append('input', new Blob([JSON.stringify({ evidences: [{ evidence_type: evidenceType, notes: notes.slice(0, 2000) }] })], { type: 'application/json' }));
+  ev.append('evidence-file', file(), fileName);
+  const r1 = await post('provide-evidence', ev);
+  if (r1.ok) return { status: 'UNDER_REVIEW', channel: 'provide-evidence', evidenceType };
+
+  // 2. Early stage (inquiry): PayPal does not accept evidence yet, so answer the buyer in the case thread
+  //    with the same reply and the signed evidence pack attached.
+  if (r1.status === 422 || r1.status === 400) {
+    const msg = new FormData();
+    msg.append('input', new Blob([JSON.stringify({ message: notes.slice(0, 2000) })], { type: 'application/json' }));
+    msg.append('evidence-file', file(), fileName);
+    const r2 = await post('send-message', msg);
+    if (r2.ok) return { status: 'RESPONDED', channel: 'send-message', note: `provide-evidence (${evidenceType}) not accepted: ${r1.text.slice(0, 120)}` };
+    throw new Error(`PayPal rejected the response: provide-evidence ${r1.status} ${r1.text.slice(0, 200)} | send-message ${r2.status} ${r2.text.slice(0, 200)}`);
+  }
+  throw new Error(`PayPal provide-evidence failed (${r1.status}): ${r1.text.slice(0, 300)}`);
 }
 
 export async function voidAuthorization(authId) {

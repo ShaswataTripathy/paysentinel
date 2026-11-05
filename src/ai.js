@@ -234,9 +234,15 @@ export async function draftDisputeResponse(dispute, pack) {
   if (aiMock) return fallback;
   try {
     const r = await geminiJSON(
-      `You are writing a seller's response to a PayPal dispute. Be factual, calm and under 150 words. Use only the facts below; do not invent shipping or tracking details.
+      `You are writing a seller's response to a PayPal dispute about a purchase made by the buyer's AI shopping agent. Be factual, calm and under 150 words, plain text.
+Use only the facts below. Never invent shipping, tracking or delivery details; if the reason is about delivery, say delivery proof will be provided separately.
+Always state, in this order: (1) the buyer's own instruction to their agent, quoted exactly, and when it was given; (2) that PayPal first only held the money (authorization id) and PaySentinel checked the held order against that instruction before capture, with how many checks passed and who approved it; (3) that the items, quantity and price match the instruction and the shop's listed prices; (4) that the attached evidence pack is signed (SHA-256 prefix). Do not claim the seller is "verified" unless the facts say so.
 Dispute reason: ${dispute.reason}. Buyer said: "${dispute.buyer_message ?? 'n/a'}"
-Evidence pack: ${JSON.stringify({ request: pack.request, on_behalf_of: pack.on_behalf_of, approver: pack.approver, resolved_by: pack.resolved_by, paypal: pack.paypal, order: pack.order, checks: pack.checks, receipt_sha256: pack.receipt?.sha256 })}`,
+Evidence pack: ${JSON.stringify({
+  request: pack.request,
+  on_behalf_of: pack.on_behalf_of === 'Me' ? 'the buyer' : pack.on_behalf_of,
+  approved_by: pack.resolved_by === 'sentinel' ? 'PaySentinel automatically, because every check passed' : pack.resolved_by === 'guardian' ? `${pack.approver}, the buyer's guardian` : 'the buyer, manually',
+  receipt_sha256_prefix: pack.receipt?.sha256?.slice(0, 16), paypal: pack.paypal, order: pack.order, checks: pack.checks, mandate: pack.mandate, decided_at: pack.decided_at })}`,
       { type: 'OBJECT', properties: { text: { type: 'STRING' } }, required: ['text'] },
     );
     return String(r.text || fallback).slice(0, 2000);
