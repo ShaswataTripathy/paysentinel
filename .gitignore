@@ -4,3 +4,4 @@ node_modules/
 data/decisions.json
 project_material/
 HACKATHON_NOTES.md
+web/dist/

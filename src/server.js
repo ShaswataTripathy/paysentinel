@@ -18,7 +18,10 @@ const LOG_FILE = path.join(ROOT, 'data', 'decisions.json');
 
 const app = express();
 app.use(express.json({ limit: '200kb' }));
-app.use(express.static(path.join(ROOT, 'public')));
+// The React UI (web/, built to web/dist) when it has been built; otherwise the original plain UI in public/.
+const WEB_DIST = path.join(ROOT, 'web', 'dist');
+const UI_DIR = fs.existsSync(path.join(WEB_DIST, 'index.html')) ? WEB_DIST : path.join(ROOT, 'public');
+app.use(express.static(UI_DIR));
 
 // ---------------- state ----------------
 const mandates = new Map(); // id -> mandate

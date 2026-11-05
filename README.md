@@ -143,11 +143,14 @@ Requires Node.js 20+.
 ```bash
 npm install
 cp .env.example .env    # add PayPal sandbox + Gemini keys (optional)
+npm run build           # build the web UI (once)
 npm start               # http://localhost:3000
 npm test                # rule engine tests
 ```
 
 Without keys, PayPal and/or AI run in **mock mode**, so the full flow can be clicked through with zero setup.
+
+The web UI lives in `web/` (React 19, Vite, Tailwind CSS v4, Motion). `npm run build` builds it into `web/dist`, which the server serves; without a build the server falls back to the plain UI in `public/`. For UI work, run `npm start` and `npm run dev:web` (Vite on :5173, proxying `/api` to :3000).
 
 | Variable | Where |
 |---|---|
@@ -187,7 +190,8 @@ src/profiles.js   Guardian mode profiles and rules
 src/evidence.js   signed receipts and dispute evidence packs
 src/mcp.js        MCP server: lets any AI agent pay through PaySentinel
 src/paypal.js     PayPal OAuth, Orders v2, authorize/capture/void
-public/           web UI
+web/              React UI (Vite + Tailwind v4 + Motion, Magic UI components)
+public/           fallback plain UI (used if web/ is not built)
 test/             rule engine tests
 ```
 
@@ -200,4 +204,4 @@ test/             rule engine tests
 
 ## License
 
-MIT
+MIT. Animated UI components in `web/src/components/ui/` come from [Magic UI](https://magicui.design) (MIT).
