@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PaySentinel</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><path d="M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7L16 2Z" fill="currentColor" opacity=".18"/><path d="M16 2 4 7v8c0 7.5 5.1 13.4 12 15 6.9-1.6 12-7.5 12-15V7L16 2Z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="15" r="3.2" fill="currentColor"/></svg>
+      <div>
+        <h1>PaySentinel</h1>
+        <p class="tag">Let AI agents shop with your PayPal, but never unwatched.</p>
+      </div>
+    </div>
+    <div id="modes" class="modes"></div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-view="shopper" role="tab">Shopper</button>
+    <button class="tab" data-view="guardian" role="tab">Guardian <span id="guardian-count" class="count hidden"></span></button>
+    <button class="tab" data-view="seller" role="tab">Seller · Shelf</button>
+    <button class="tab" data-view="log" role="tab">Decision log</button>
+  </nav>
+
+  <main>
+    <!-- ================= SHOPPER ================= -->
+    <section id="view-shopper" class="view">
+      <ol class="flow">
+        <li class="card" id="step-intent">
+          <h2><span class="num">1</span> Tell your agent what to buy</h2>
+          <div class="row wrap tight">
+            <label class="inline">Shopping for <select id="profile"></select></label>
+            <span id="profile-note" class="muted"></span>
+          </div>
+          <textarea id="task" rows="2">Buy one pack of AA batteries under $15</textarea>
+          <div class="examples" id="examples"></div>
+          <div class="row">
+            <button id="btn-mandate">Create mandate</button>
+            <span class="muted" id="mandate-status"></span>
+          </div>
+          <div id="mandate" class="mandate hidden"></div>
+        </li>
+
+        <li class="card locked" id="step-agent">
+          <h2><span class="num">2</span> The agent shops</h2>
+          <div class="row wrap">
+            <label class="inline">Agent
+              <select id="agent-mode">
+                <option value="simulated">Simulated agent (reproducible, falls for hidden instructions)</option>
+                <option value="gemini">Live Gemini agent</option>
+              </select>
+            </label>
+            <label class="switch"><input type="checkbox" id="attack" /> <span>Attack mode: agent also finds an untrusted shop</span></label>
+          </div>
+          <div class="row"><button id="btn-run">Let the agent shop</button><span class="muted" id="run-status"></span></div>
+          <div id="run" class="hidden">
+            <h3>What the agent did</h3>
+            <ol id="trace" class="trace"></ol>
+            <h3>Cart it wants to pay for</h3>
+            <div class="table-wrap"><table id="cart"><thead><tr><th>Item</th><th>Qty</th><th>Price</th></tr></thead><tbody></tbody><tfoot></tfoot></table></div>
+          </div>
+        </li>
+
+        <li class="card locked" id="step-pay">
+          <h2><span class="num">3</span> PayPal holds the money</h2>
+          <p class="muted">Approving only <strong>reserves</strong> the amount (intent: AUTHORIZE). Nothing is charged until PaySentinel's checks pass.</p>
+          <div class="speak-box" id="speak-box">
+            <p id="pay-summary" class="pay-summary"></p>
+            <div class="row tight">
+              <button class="ghost" id="btn-speak" aria-label="Read the payment details aloud">🔊 Read aloud</button>
+              <label class="switch small"><input type="checkbox" id="auto-speak" /> <span>Always read payments aloud before I approve</span></label>
+            </div>
+          </div>
+          <div id="paypal-buttons"></div>
+          <button id="btn-mock-pay" class="hidden">Approve in PayPal (mock mode)</button>
+          <button id="btn-card-pay" class="ghost hidden">Approve with a PayPal sandbox test card (no login, for judges)</button>
+          <span class="muted" id="pay-status" role="status" aria-live="polite"></span>
+        </li>
+
+        <li class="card locked" id="step-verdict">
+          <h2><span class="num">4</span> PaySentinel decides</h2>
+          <div id="verdict" aria-live="polite"></div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ================= GUARDIAN ================= -->
+    <section id="view-guardian" class="view hidden">
+      <div class="card">
+        <h2>Waiting for your approval</h2>
+        <div id="g-pending"><p class="muted">Nothing waiting.</p></div>
+      </div>
+      <div class="card">
+        <h2>Blocked for your family</h2>
+        <div id="g-blocked"><p class="muted">Nothing blocked yet.</p></div>
+      </div>
+      <div class="card" id="g-rules"></div>
+    </section>
+
+    <!-- ================= SELLER ================= -->
+    <section id="view-seller" class="view hidden">
+      <div class="card">
+        <h2>Make your shop readable by AI agents</h2>
+        <p class="muted">Paste a product list in any format: a spreadsheet export, or notes. AI turns it into a clean catalog that shopping agents can read and pay for with PayPal.</p>
+        <label>Shop name <input id="shop-name" placeholder="Priya's Handmade" /></label>
+        <label>Products
+          <textarea id="shop-products" rows="6" placeholder="name,price,stock,description&#10;Hand-painted mug,14.50,12,Ceramic mug painted by hand&#10;Jute tote bag,9,30,Eco-friendly jute bag"></textarea>
+        </label>
+        <div class="row"><button id="btn-import">Build my shop</button><span class="muted" id="import-status"></span></div>
+      </div>
+      <div class="card">
+        <div class="row space"><h2>Shops</h2><button class="link" id="btn-shops">refresh</button></div>
+        <div id="shops"></div>
+      </div>
+    </section>
+
+    <!-- ================= LOG ================= -->
+    <section id="view-log" class="view hidden">
+      <div class="card">
+        <div class="row space"><h2>Every agent payment, and why</h2><button class="link" id="btn-log">refresh</button></div>
+        <div class="table-wrap"><table id="log"><thead><tr><th>When</th><th>Request</th><th>Shop</th><th>Amount</th><th>Decision</th><th>Reason</th><th><span class="sr-only">Evidence</span></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card hidden" id="evidence-card" aria-live="polite">
+        <div class="row space"><h2>Evidence &amp; disputes</h2><button class="link" id="btn-evidence-close">close</button></div>
+        <div id="evidence"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+[
+  {
+    "id": "self",
+    "name": "Me",
+    "guardian": null
+  },
+  {
+    "id": "mom",
+    "name": "Mom (Kamala, 74)",
+    "guardian": {
+      "name": "Arjun (son)",
+      "rules": {
+        "allowed_categories": ["groceries", "pharmacy", "household"],
+        "blocked_categories": ["gift_cards"],
+        "per_order_limit": 50,
+        "weekly_limit": 150,
+        "verified_shops_only": true
+      }
+    }
+  }
+]
