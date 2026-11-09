@@ -8,6 +8,7 @@ Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/).
 
 ## For judges: try it in 2 minutes
 
+- **Demo video (2:49):** https://youtu.be/LNEYdUaaNXY
 - **Live demo:** https://paysentinel-0w89.onrender.com (Render free tier: the first load can take ~50 s while it wakes up).
 - **Approve without a PayPal login:** in step 3, press **"Approve with a PayPal sandbox test card"**. PayPal's real sandbox places the hold on PayPal's published test Visa, and the rest of the flow (authorize → checks → capture/void) is the real sandbox API.
 - **Or approve with PayPal:** press the PayPal button and log in with the sandbox buyer below.
