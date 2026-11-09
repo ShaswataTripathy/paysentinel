@@ -95,6 +95,17 @@ test('a checkout cannot be authorized twice', async () => {
   assert.equal(again.status, 404);
 });
 
+test('reopening the PayPal popup reuses the open order', async () => {
+  const m = await call('POST', '/api/mandates', { text: 'Buy one pack of AA batteries under $15', profileId: 'self' });
+  const run = await call('POST', `/api/mandates/${m.body.id}/run`, { agent: 'simulated' });
+  const first = await call('POST', '/api/checkout', { runId: run.body.runId, method: 'paypal' });
+  const second = await call('POST', '/api/checkout', { runId: run.body.runId, method: 'paypal' });
+  assert.equal(second.status, 201);
+  assert.equal(second.body.orderId, first.body.orderId);
+  await call('POST', `/api/orders/${first.body.orderId}/authorize`);
+  assert.equal((await call('POST', '/api/checkout', { runId: run.body.runId, method: 'paypal' })).status, 409);
+});
+
 test('guardian rules are validated', async () => {
   assert.equal((await call('PUT', '/api/profiles/mom/rules', { per_order_limit: -5 })).status, 400);
   assert.equal((await call('PUT', '/api/profiles/mom/rules', { per_order_limit: 'abc' })).status, 400);

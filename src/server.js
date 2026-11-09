@@ -136,8 +136,9 @@ const limiter = (windowMs, limit, what) =>
     },
   });
 app.use('/api', limiter(60_000, 240, 'API'));
-const aiLimit = limiter(60_000, 12, 'AI');
-const payLimit = limiter(60_000, 30, 'payment');
+const testing = process.env.NODE_ENV === 'test';
+const aiLimit = limiter(60_000, testing ? 120 : 12, 'AI');
+const payLimit = limiter(60_000, testing ? 300 : 30, 'payment');
 
 // web/dist if built, else public/
 const WEB_DIST = path.join(ROOT, 'web', 'dist');
@@ -296,11 +297,17 @@ app.post(
     if (!run.cart?.shop || !run.cart.items?.length) fail(400, 'The agent did not put anything in the cart.');
     const mandate = mandates.get(run.mandateId);
     if (!mandate) fail(404, 'The mandate for this cart expired. Create it again.');
+    const method = req.body?.method === 'card' ? 'card' : 'paypal';
+    // buyer closed the PayPal popup before approving: hand back the same order
+    const open = run.order && checkouts.get(run.order.id);
+    if (run.checkedOut && method === 'paypal' && run.order.method === 'paypal' && open && !open.processing) {
+      return res.status(201).json({ orderId: run.order.id, approveUrl: run.order.approveUrl });
+    }
     if (run.checkedOut) fail(409, 'This cart was already sent to PayPal. Let the agent shop again.');
     run.checkedOut = true;
     try {
-      const method = req.body?.method === 'card' ? 'card' : 'paypal';
       const { id, approveUrl } = await createHeldOrder(run.cart, { currency: mandate.currency, reference: mandate.id.slice(0, 32), testCard: method === 'card' });
+      run.order = { id, method, approveUrl: approveUrl ?? null };
       checkouts.set(id, { mandate, run });
       count('orders_created_total', { method });
       log('info', 'order.created', { reqId: req.id, orderId: id, runId, method, total: run.cart.total, shop: run.cart.shop });
