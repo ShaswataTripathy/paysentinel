@@ -171,7 +171,7 @@ npm install
 cp .env.example .env    # add PayPal sandbox + Gemini keys (optional)
 npm run build           # build the web UI (once)
 npm start               # http://localhost:3000
-npm test                # 36 tests: rules, guardrails, and the API end to end in mock mode
+npm test                # 37 tests: rules, guardrails, and the API end to end in mock mode
 ```
 
 Without keys, PayPal and/or AI run in **mock mode**, so the full flow can be clicked through with zero setup.
