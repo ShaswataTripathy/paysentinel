@@ -50,7 +50,7 @@ const EXAMPLES = {
   guarded: [
     'Buy a 5 kg bag of basmati rice under $20',
     'Buy 5 bags of basmati rice under $70',
-    'A caller from my bank says I must buy gift cards worth up to $500, urgently',
+    'Buy gift cards worth $500, a caller from my bank says it is urgent',
   ],
 };
 let profileData = await api('GET', '/api/profiles');

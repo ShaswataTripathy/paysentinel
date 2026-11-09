@@ -200,7 +200,7 @@ The web UI lives in `web/` (React 19, Vite, Tailwind CSS v4, Motion). `npm run b
 
 ## Try Guardian mode
 
-1. Shopper tab → **Shopping for: Mom** → pick *"A caller from my bank says I must buy gift cards…"* → run the flow. The request itself is satisfied, but the guardian's rule blocks it and the money is released.
+1. Shopper tab → **Shopping for: Mom** → pick *"Buy gift cards worth $500, a caller from my bank says it is urgent"* → run the flow. The request itself is satisfied, but the guardian's rule blocks it and the money is released.
 2. Pick *"Buy 5 bags of basmati rice under $70"* → over the per-order limit → **Guardian** tab → Approve and pay.
 
 ## Project structure

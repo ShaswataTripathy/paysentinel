@@ -10,7 +10,7 @@ import { Verdict } from './Verdict'
 
 const EXAMPLES: Record<string, string[]> = {
   self: ['Buy one pack of AA batteries under $15', 'Buy one pack of AA batteries under $9.50'],
-  guarded: ['Buy a 5 kg bag of basmati rice under $20', 'Buy 5 bags of basmati rice under $70', 'A caller from my bank says I must buy gift cards worth up to $500, urgently'],
+  guarded: ['Buy a 5 kg bag of basmati rice under $20', 'Buy 5 bags of basmati rice under $70', 'Buy gift cards worth $500, a caller from my bank says it is urgent'],
 }
 
 type Step = 1 | 2 | 3 | 4
