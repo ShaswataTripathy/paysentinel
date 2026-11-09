@@ -14,8 +14,8 @@ Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/).
 
 | Sandbox buyer (test money only) | |
 |---|---|
-| Email | _added before submission_ |
-| Password | _added before submission_ |
+| Email | `sb-1jizp53714528@personal.example.com` |
+| Password | `Bkm^i3w.` |
 
 Suggested path: run **"Buy one pack of AA batteries under $15"** once normally (captured), once with **Attack mode** on (voided, with the reason), then switch to **Mom** and try the gift-card scam example (blocked by the guardian's rules).
 
