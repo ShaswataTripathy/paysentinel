@@ -292,6 +292,11 @@ export function ShopperFlow({ config, profiles, shopNames, onDecision }: { confi
             <span className={attack ? 'text-rose-200' : 'text-muted-foreground'}>Attack mode: the agent also finds an untrusted shop</span>
           </label>
         </div>
+        {attack && agentMode === 'gemini' && (
+          <p className="mt-3 text-sm text-muted-foreground">
+            Gemini often ignores the trap and buys the right item. To see PaySentinel block the attack every time, pick <b>Scripted agent</b>.
+          </p>
+        )}
         <div className="mt-4">
           <ShimmerButton onClick={runAgent} disabled={!!busy} background="linear-gradient(180deg,#2563eb,#1d4ed8)" shimmerColor="#a5f3fc" className="h-11 px-5 text-sm font-semibold">
             <span className="flex items-center gap-2">

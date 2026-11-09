@@ -17,7 +17,7 @@ Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/).
 | Email | `sb-1jizp53714528@personal.example.com` |
 | Password | `Bkm^i3w.` |
 
-Suggested path: run **"Buy one pack of AA batteries under $15"** once normally (captured), once with **Attack mode** on (voided, with the reason), then switch to **Mom** and try the gift-card scam example (blocked by the guardian's rules).
+Suggested path: run **"Buy one pack of AA batteries under $15"** once normally (captured), once with **Scripted agent** and **Attack mode** on (voided, with the reason; the live Gemini agent often ignores the trap, so it may buy the right item and get captured), then switch to **Mom** and try the gift-card scam example (blocked by the guardian's rules).
 
 Gemini's free tier allows only a few requests per model per day, so PaySentinel spreads work over several Gemini models, and if all are used up the scripted agent shops instead (the trace says so). The Sentinel checks both agents the same way.
 
